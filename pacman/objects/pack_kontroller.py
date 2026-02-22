@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+
+from pygame import Color, draw
+from pygame.surface import Surface
 from typing import Callable
 
 from pygame.event import Event
 
 from pacman.data_core import Cfg, IEventful
 from pacman.misc import CellUtil
+
+
+@dataclass
+class _TargetMark:
+    cell_x: int
+    cell_y: int
+    left_time: float
 
 
 @dataclass
@@ -25,13 +35,31 @@ class PackKontroller(IEventful):
         self._on_spawn: Callable[[int, object], None] | None = None
         self._on_remove: Callable[[int, object], None] | None = None
         self._routes: dict[int, _RouteState] = {}
+        self._targets: list[_TargetMark] = []
 
     def event_handler(self, event: Event) -> None:
         return
 
-    def update(self) -> None:
+    def update(self, dt_seconds: float = 1 / Cfg.FPS) -> None:
         for player_id in list(self._routes.keys()):
             self._update_route(player_id)
+
+        if dt_seconds <= 0:
+            return
+        for target in self._targets:
+            target.left_time -= dt_seconds
+        self._targets = [target for target in self._targets if target.left_time > 0]
+
+    def draw_targets(self, screen: Surface) -> None:
+        for target in self._targets:
+            cx, cy = CellUtil.get_center_pos((target.cell_x, target.cell_y))
+            draw.circle(screen, Color("red"), (cx, cy), Cfg.TILE_SIZE // 3)
+
+    def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
+        if time_sec <= 0:
+            return False
+        self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec)))
+        return True
 
     def set_player_factory(self, factory: Callable[[], object]) -> None:
         self._player_factory = factory

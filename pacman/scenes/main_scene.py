@@ -52,6 +52,7 @@ class MainScene(BaseScene):
         self.__pack_kontroller = PackKontroller()
         self.__script_pressed_keys: set[str] = set()
         self.__last_tick = time.get_ticks()
+        self.__frame_dt = 0.0
         self.__script_runner = None
 
         self.__create_heroes()
@@ -229,7 +230,7 @@ class MainScene(BaseScene):
             ghost.home_ai(self.__seeds_eaten)
 
     def __game_logic(self):
-        self.__pack_kontroller.update()
+        self.__pack_kontroller.update(self.__frame_dt)
         super().process_logic()
         self.__play_sound()
         self.__ghost_ai()
@@ -242,20 +243,22 @@ class MainScene(BaseScene):
     # region Public
 
     def process_logic(self) -> None:
+        now = time.get_ticks()
+        self.__frame_dt = (now - self.__last_tick) / 1000
+        self.__last_tick = now
+
         if self.__state in self.actions:
             self.actions[self.__state]()
 
         if self.__script_runner is not None:
-            now = time.get_ticks()
-            dt_seconds = (now - self.__last_tick) / 1000
-            self.__last_tick = now
-            self.__script_runner.update(dt_seconds)
+            self.__script_runner.update(self.__frame_dt)
 
         self.__cheats.update()
         self.__script_pressed_keys.clear()
 
     def draw(self) -> Surface:
         super().draw()
+        self.__pack_kontroller.draw_targets(self._screen)
         if self.__state.INTRO:
             for txt in self.__into_text[0:1]:
                 txt.draw(self._screen)

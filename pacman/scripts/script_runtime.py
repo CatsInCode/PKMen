@@ -46,6 +46,9 @@ class ScriptAPI:
     def goToTime(self, player_id: int, cell_x: int, cell_y: int, time_sec: float) -> bool:
         return self._controller.goToTime(player_id, cell_x, cell_y, time_sec)
 
+    def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
+        return self._controller.setTarget(cell_x, cell_y, time_sec)
+
     def wait(self, seconds: float) -> WaitSeconds:
         return WaitSeconds(seconds)
 
