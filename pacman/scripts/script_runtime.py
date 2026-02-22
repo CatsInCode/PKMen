@@ -37,6 +37,9 @@ class ScriptAPI:
     def right(self, player_id: int) -> None:
         self._controller.right(player_id)
 
+    def stop(self, player_id: int) -> None:
+        self._controller.stop(player_id)
+
     def wait(self, seconds: float) -> WaitSeconds:
         return WaitSeconds(seconds)
 

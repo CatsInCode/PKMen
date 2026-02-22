@@ -64,6 +64,12 @@ class PackKontroller(IEventful):
     def down(self, player_id: int) -> None:
         self._move(player_id, "down")
 
+    def stop(self, player_id: int) -> None:
+        pacman = self._players.get(player_id)
+        if pacman is None:
+            return
+        pacman.stop_move()
+
     def _move(self, player_id: int, direction: str) -> None:
         pacman = self._players.get(player_id)
         if pacman is None:

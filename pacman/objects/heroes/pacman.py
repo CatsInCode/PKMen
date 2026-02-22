@@ -37,6 +37,10 @@ class Pacman(Character, IEventful):
     def teleport(self, x: int, y: int) -> None:
         self.move_center(x, y)
 
+    def stop_move(self) -> None:
+        self.__feature_rotate = "none"
+        self.stop()
+
     def update(self) -> None:
         self.animator.update()
         if not self.is_dead:
@@ -47,7 +51,7 @@ class Pacman(Character, IEventful):
                     self.stop()
                     self.animator.set_cur_image(0)
                 c = self.direction[self.__feature_rotate][2]
-                if self.can_rotate_to(c):
+                if c is not None and self.can_rotate_to(c):
                     self.set_direction(self.__feature_rotate)
             super().update()
 

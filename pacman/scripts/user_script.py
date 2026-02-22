@@ -5,7 +5,7 @@ from __future__ import annotations
 # Commands available:
 # api.spawn(id, x, y)
 # api.remove(id)
-# api.up(id) / api.right(id) / api.left(id) / api.down(id)
+# api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # yield api.wait(seconds)
 # yield api.wait_key("u")
 def build_script(api):
