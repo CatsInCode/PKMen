@@ -35,8 +35,14 @@ class Pacman(Character, IEventful):
         self.go()
         self.__feature_rotate = direction
 
+    @staticmethod
+    def __normalize_speed(value: float) -> int:
+        speed = max(1.0, float(value))
+        allowed = (1, 2, 4)
+        return min(allowed, key=lambda item: abs(item - speed))
+
     def set_move_speed(self, value: float) -> None:
-        self.__move_speed = max(0.1, float(value))
+        self.__move_speed = self.__normalize_speed(value)
         if self.speed > 0:
             self.speed = self.__move_speed
 

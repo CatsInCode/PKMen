@@ -147,7 +147,7 @@ class PackKontroller(IEventful):
         if time_sec is not None:
             steps = len(path) - 1
             distance_px = steps * Cfg.TILE_SIZE
-            speed = max(0.1, distance_px / (time_sec * Cfg.FPS))
+            speed = max(1.0, distance_px / (time_sec * Cfg.FPS))
 
         pacman.set_move_speed(speed)
         self._routes[player_id] = _RouteState(path, speed)
