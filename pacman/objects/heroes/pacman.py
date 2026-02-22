@@ -18,6 +18,7 @@ class Pacman(Character, IEventful):
         self.is_dead = False
         self.__feature_rotate = "none"
         self.__ai_timer = 0
+        self.__move_speed = 1.0
         self.animator.stop()
 
     @property
@@ -34,11 +35,22 @@ class Pacman(Character, IEventful):
         self.go()
         self.__feature_rotate = direction
 
+    def set_move_speed(self, value: float) -> None:
+        self.__move_speed = max(0.1, float(value))
+        if self.speed > 0:
+            self.speed = self.__move_speed
+
+    def go(self) -> None:
+        if self.speed != 0:
+            self.animator.start()
+        self.speed = self.__move_speed
+
     def teleport(self, x: int, y: int) -> None:
         self.move_center(x, y)
 
     def stop_move(self) -> None:
         self.__feature_rotate = "none"
+        self.set_move_speed(1.0)
         self.stop()
 
     def update(self) -> None:

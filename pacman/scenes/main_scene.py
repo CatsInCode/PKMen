@@ -229,6 +229,7 @@ class MainScene(BaseScene):
             ghost.home_ai(self.__seeds_eaten)
 
     def __game_logic(self):
+        self.__pack_kontroller.update()
         super().process_logic()
         self.__play_sound()
         self.__ghost_ai()
