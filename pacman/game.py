@@ -3,6 +3,7 @@ from pygame.event import Event
 
 from pacman.data_core import Cfg, EvenType, PathUtl
 from pacman.misc import GameObjects
+from pacman.objects import KbEvent
 from pacman.scenes import SceneManager
 from pacman.scenes.menu_scene import MenuScene
 from pacman.sound import SoundController, Sounds
@@ -21,7 +22,7 @@ class Game:
         self.__storage_loader.from_file()
         SoundController.update_volume()
 
-        self.__objects += [self.__storage_loader]
+        self.__objects += [self.__storage_loader, KbEvent()]
 
         SceneManager().reset(MenuScene())
 
