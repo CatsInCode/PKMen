@@ -9,6 +9,7 @@ from __future__ import annotations
 # api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # api.goTo(id, x, y) / api.goToTime(id, x, y, time_sec)
 # api.setTarget(x, y, time_sec)
+# api.getBlockInfo(x, y) -> bool
 # yield api.wait(seconds)
 # yield api.wait_key("u")
 def build_script(api):

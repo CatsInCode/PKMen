@@ -121,6 +121,19 @@ class PackKontroller(IEventful):
             return
         pacman.stop_move()
 
+    def getBlockInfo(self, cell_x: int, cell_y: int) -> bool:
+        pacman = next(iter(self._players.values()), None)
+        if pacman is None:
+            return False
+        collision_map = pacman.level_loader.collision_map
+        if not collision_map:
+            return False
+        rows = len(collision_map)
+        cols = len(collision_map[0])
+        if not (0 <= cell_x < cols and 0 <= cell_y < rows):
+            return False
+        return collision_map[cell_y][cell_x] != 0
+
     def goTo(self, player_id: int, cell_x: int, cell_y: int) -> bool:
         return self._start_route(player_id, cell_x, cell_y, None)
 
