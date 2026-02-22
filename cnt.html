@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>UWB650 Emulator (3 Anchors + MQTT)</title>
+  <style>
+    :root{
+      --bg:#0f1115;
+      --panel:#171a21;
+      --panel2:#1d222b;
+      --text:#e7ecf3;
+      --muted:#9aa7b5;
+      --line:#2b3442;
+      --ok:#7CFC93;
+      --warn:#ffd166;
+      --bad:#ff7b7b;
+      --accent:#67b7ff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:12px;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    h1{font-size:18px; margin:0 0 10px}
+    .layout{
+      display:grid;
+      grid-template-columns: 420px 1fr;
+      gap:12px;
+      align-items:start;
+    }
+    .stack{display:grid; gap:12px;}
+    .panel{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      box-shadow:0 6px 20px rgba(0,0,0,.25);
+    }
+    .panel h2{
+      margin:0 0 8px;
+      font-size:14px;
+      color:#d7e4f2;
+      letter-spacing:.2px;
+    }
+    .row{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:8px;
+      margin-bottom:8px;
+    }
+    .row3{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:8px;
+      margin-bottom:8px;
+    }
+    label{
+      display:block;
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:4px;
+    }
+    input, select, button, textarea{
+      width:100%;
+      border:1px solid var(--line);
+      background:var(--panel2);
+      color:var(--text);
+      border-radius:8px;
+      padding:8px 10px;
+      font:inherit;
+    }
+    button{cursor:pointer}
+    button:hover{filter:brightness(1.06)}
+    .btns{display:flex; gap:8px; flex-wrap:wrap}
+    .btns button{width:auto}
+    .ok{color:var(--ok)}
+    .bad{color:var(--bad)}
+    .muted{color:var(--muted)}
+    .small{font-size:12px}
+    .canvas-wrap{
+      background:#0b0d12;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+    }
+    canvas{
+      width:100%;
+      max-width:900px;
+      display:block;
+      background:#090b10;
+      border-radius:8px;
+      border:1px solid #1f2632;
+      image-rendering:pixelated;
+    }
+    .legend{
+      display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;
+      font-size:12px; color:var(--muted);
+    }
+    .dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle}
+    .grid2{
+      display:grid; grid-template-columns:1fr 1fr; gap:8px;
+    }
+    .mono{
+      font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:12px;
+      white-space:pre-wrap;
+      word-break:break-word;
+      background:#0d1016;
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:8px;
+      max-height:170px;
+      overflow:auto;
+    }
+    .log{
+      height:180px;
+      overflow:auto;
+      background:#0d1016;
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:8px;
+      font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:12px;
+      white-space:pre-wrap;
+    }
+    .status-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:8px;
+    }
+    .card{
+      background:#121722;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:8px;
+    }
+    .card h3{
+      margin:0 0 6px;
+      font-size:12px;
+      color:#c9d8e7;
+    }
+    .kv{
+      display:grid;
+      grid-template-columns:auto 1fr;
+      gap:4px 8px;
+      font-size:12px;
+    }
+    .kv div:nth-child(odd){color:var(--muted)}
+    .inline{
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      font-size:12px;
+    }
+    .pill{
+      display:inline-block;
+      border:1px solid var(--line);
+      border-radius:999px;
+      padding:3px 8px;
+      background:#111622;
+      font-size:12px;
+    }
+    @media (max-width: 980px){
+      .layout{grid-template-columns: 1fr;}
+    }
+  </style>
+</head>
+<body>
+  <h1>Эмулятор UWB650 (3 якоря + сырые JSON + MQTT)</h1>
+
+  <div class="layout">
+    <div class="stack">
+      <div class="panel">
+        <h2>MQTT подключение</h2>
+        <div class="row">
+          <div>
+            <label>WebSocket URL</label>
+            <input id="mqttUrl" value="ws://192.168.0.110:9001" placeholder="ws://IP:9001">
+          </div>
+          <div>
+            <label>Client ID</label>
+            <input id="clientId" value="uwb650_emulator_browser">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Topic (JSON telemetry)</label>
+            <input id="topicTelemetry" value="uwb/tag/raw">
+          </div>
+          <div>
+            <label>Topic (status, optional)</label>
+            <input id="topicStatus" value="uwb/tag/status">
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>Tag ID</label>
+            <input id="tagId" type="number" value="10" min="0" step="1">
+          </div>
+          <div>
+            <label>Частота отправки (Гц)</label>
+            <input id="rateHz" type="number" value="10" min="1" max="100" step="1">
+          </div>
+        </div>
+        <div class="btns">
+          <button id="btnConnect">Подключить MQTT</button>
+          <button id="btnDisconnect" disabled>Отключить MQTT</button>
+          <button id="btnSendOnce">Отправить 1 пакет</button>
+        </div>
+        <div class="inline" style="margin-top:8px">
+          <span>Статус:</span>
+          <span id="mqttState" class="pill">DISCONNECTED</span>
+          <span id="sendState" class="pill">TX OFF</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Геометрия зоны и якорей (в метрах)</h2>
+        <div class="row">
+          <div>
+            <label>Ширина зоны (м)</label>
+            <input id="worldW" type="number" value="10" min="1" step="0.1">
+          </div>
+          <div>
+            <label>Высота зоны (м)</label>
+            <input id="worldH" type="number" value="6" min="1" step="0.1">
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <h3>A1</h3>
+            <div class="row">
+              <div>
+                <label>X (м)</label>
+                <input id="a1x" type="number" value="0.5" step="0.01">
+              </div>
+              <div>
+                <label>Y (м)</label>
+                <input id="a1y" type="number" value="0.5" step="0.01">
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>A2</h3>
+            <div class="row">
+              <div>
+                <label>X (м)</label>
+                <input id="a2x" type="number" value="9.5" step="0.01">
+              </div>
+              <div>
+                <label>Y (м)</label>
+                <input id="a2y" type="number" value="0.5" step="0.01">
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>A3</h3>
+            <div class="row">
+              <div>
+                <label>X (м)</label>
+                <input id="a3x" type="number" value="5.0" step="0.01">
+              </div>
+              <div>
+                <label>Y (м)</label>
+                <input id="a3y" type="number" value="5.5" step="0.01">
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Шум / имитация</h3>
+            <div class="row">
+              <div>
+                <label>σ distance (м)</label>
+                <input id="noiseDist" type="number" value="0.05" step="0.01" min="0">
+              </div>
+              <div>
+                <label>σ RSSI (dB)</label>
+                <input id="noiseRssi" type="number" value="2.0" step="0.1" min="0">
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <label>Мощность @1м (dBm)</label>
+                <input id="rssiAt1m" type="number" value="-48" step="1">
+              </div>
+              <div>
+                <label>Path loss n</label>
+                <input id="pathLossN" type="number" value="2.0" step="0.1" min="1">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="btns">
+          <button id="btnApplyGeometry">Применить геометрию</button>
+          <button id="btnCenterTag">Поставить тег в центр</button>
+          <button id="btnToggleTx">Старт / Стоп TX</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Состояние / телеметрия</h2>
+        <div class="status-grid">
+          <div class="card">
+            <h3>Tag (мышь)</h3>
+            <div class="kv">
+              <div>x, м</div><div id="tagPosX">—</div>
+              <div>y, м</div><div id="tagPosY">—</div>
+              <div>inside zone</div><div id="tagInside">false</div>
+              <div>последний tx</div><div id="lastTxAt">—</div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Якоря / расстояния</h3>
+            <div class="kv">
+              <div>A1</div><div id="dA1">—</div>
+              <div>A2</div><div id="dA2">—</div>
+              <div>A3</div><div id="dA3">—</div>
+              <div>Δt пакет</div><div id="dtPacket">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:8px">
+          <label>Последний JSON пакет</label>
+          <div id="lastJson" class="mono">{}</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Лог</h2>
+        <div id="log" class="log"></div>
+      </div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="scene" width="900" height="540"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:#67b7ff"></span>Якорь A1/A2/A3</span>
+        <span><span class="dot" style="background:#ffd43b"></span>Тег (мышь)</span>
+        <span><span class="dot" style="background:#7CFC93"></span>Активная передача MQTT</span>
+      </div>
+      <div class="small muted" style="margin-top:8px">
+        Наведи мышь на поле — это положение тега. Клиент отправляет сырые измерения (distance/raw/rssi/fp_rssi/тайминги),
+        а триангуляцию делаем потом на Python-обработчике.
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    // =========================
+    // Helpers
+    // =========================
+    const $ = (id) => document.getElementById(id);
+    const nowMs = () => Date.now();
+
+    function log(msg, cls = "") {
+      const el = $("log");
+      const line = document.createElement("div");
+      if (cls) line.className = cls;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function clamp(v, lo, hi) {
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    function fmt(v, d = 2) {
+      if (v == null || Number.isNaN(v)) return "—";
+      return Number(v).toFixed(d);
+    }
+
+    function randn() {
+      // Box-Muller
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(min + Math.random() * (max - min + 1));
+    }
+
+    // =========================
+    // App state
+    // =========================
+    const canvas = $("scene");
+    const ctx = canvas.getContext("2d");
+
+    let mqttClient = null;
+    let mqttConnected = false;
+    let txEnabled = false;
+    let txTimer = null;
+    let lastPacketTime = null;
+    let lastTxFlashUntil = 0;
+
+    const state = {
+      world: { w: 10, h: 6 }, // meters
+      anchors: {
+        A1: { x: 0.5, y: 0.5 },
+        A2: { x: 9.5, y: 0.5 },
+        A3: { x: 5.0, y: 5.5 }
+      },
+      tag: {
+        x: 5.0, y: 3.0,
+        inside: false
+      },
+      sim: {
+        noiseDist: 0.05,
+        noiseRssi: 2.0,
+        rssiAt1m: -48,
+        pathLossN: 2.0,
+      },
+      lastPayload: null
+    };
+
+    // =========================
+    // UI sync
+    // =========================
+    function loadUiToState() {
+      state.world.w = Math.max(0.1, parseFloat($("worldW").value) || 10);
+      state.world.h = Math.max(0.1, parseFloat($("worldH").value) || 6);
+
+      state.anchors.A1.x = parseFloat($("a1x").value) || 0;
+      state.anchors.A1.y = parseFloat($("a1y").value) || 0;
+      state.anchors.A2.x = parseFloat($("a2x").value) || 0;
+      state.anchors.A2.y = parseFloat($("a2y").value) || 0;
+      state.anchors.A3.x = parseFloat($("a3x").value) || 0;
+      state.anchors.A3.y = parseFloat($("a3y").value) || 0;
+
+      state.sim.noiseDist = Math.max(0, parseFloat($("noiseDist").value) || 0);
+      state.sim.noiseRssi = Math.max(0, parseFloat($("noiseRssi").value) || 0);
+      state.sim.rssiAt1m = parseFloat($("rssiAt1m").value) || -48;
+      state.sim.pathLossN = Math.max(1, parseFloat($("pathLossN").value) || 2.0);
+
+      // clamp tag inside world
+      state.tag.x = clamp(state.tag.x, 0, state.world.w);
+      state.tag.y = clamp(state.tag.y, 0, state.world.h);
+    }
+
+    function pushStateToUi() {
+      $("worldW").value = state.world.w;
+      $("worldH").value = state.world.h;
+
+      $("a1x").value = state.anchors.A1.x;
+      $("a1y").value = state.anchors.A1.y;
+      $("a2x").value = state.anchors.A2.x;
+      $("a2y").value = state.anchors.A2.y;
+      $("a3x").value = state.anchors.A3.x;
+      $("a3y").value = state.anchors.A3.y;
+    }
+
+    function updateStatusUi(meas = null) {
+      $("tagPosX").textContent = fmt(state.tag.x, 3) + " м";
+      $("tagPosY").textContent = fmt(state.tag.y, 3) + " м";
+      $("tagInside").textContent = String(state.tag.inside);
+
+      $("mqttState").textContent = mqttConnected ? "CONNECTED" : "DISCONNECTED";
+      $("mqttState").className = "pill " + (mqttConnected ? "ok" : "bad");
+
+      $("sendState").textContent = txEnabled ? "TX ON" : "TX OFF";
+      $("sendState").className = "pill " + (txEnabled ? "ok" : "");
+
+      if (state.lastPayload) {
+        $("lastJson").textContent = JSON.stringify(state.lastPayload, null, 2);
+      }
+
+      if (meas) {
+        $("dA1").textContent = fmt(meas.A1.distance, 3) + " м";
+        $("dA2").textContent = fmt(meas.A2.distance, 3) + " м";
+        $("dA3").textContent = fmt(meas.A3.distance, 3) + " м";
+      }
+
+      if (lastPacketTime) {
+        $("lastTxAt").textContent = new Date(lastPacketTime).toLocaleTimeString();
+      }
+    }
+
+    // =========================
+    // World <-> canvas transform
+    // =========================
+    function getViewport() {
+      // margins in canvas pixels
+      const pad = 30;
+      const w = canvas.width;
+      const h = canvas.height;
+      const innerW = w - pad * 2;
+      const innerH = h - pad * 2;
+      const sx = innerW / state.world.w;
+      const sy = innerH / state.world.h;
+      const scale = Math.min(sx, sy);
+
+      const drawW = state.world.w * scale;
+      const drawH = state.world.h * scale;
+      const ox = (w - drawW) / 2;
+      const oy = (h - drawH) / 2;
+
+      return { ox, oy, scale, drawW, drawH };
+    }
+
+    function worldToCanvas(xm, ym) {
+      const vp = getViewport();
+      return {
+        x: vp.ox + xm * vp.scale,
+        y: vp.oy + ym * vp.scale
+      };
+    }
+
+    function canvasToWorld(cx, cy) {
+      const rect = canvas.getBoundingClientRect();
+      const px = (cx - rect.left) * (canvas.width / rect.width);
+      const py = (cy - rect.top) * (canvas.height / rect.height);
+
+      const vp = getViewport();
+      const xm = (px - vp.ox) / vp.scale;
+      const ym = (py - vp.oy) / vp.scale;
+
+      return {
+        x: xm,
+        y: ym,
+        inside: (xm >= 0 && xm <= state.world.w && ym >= 0 && ym <= state.world.h)
+      };
+    }
+
+    // =========================
+    // Simulation (raw UWB-like measurements)
+    // =========================
+    function dist(ax, ay, bx, by) {
+      const dx = ax - bx;
+      const dy = ay - by;
+      return Math.hypot(dx, dy);
+    }
+
+    function distanceToRssi(dMeters) {
+      // Simple path loss model
+      // RSSI = RSSI_1m - 10*n*log10(d)
+      const d = Math.max(dMeters, 0.05);
+      return state.sim.rssiAt1m - 10 * state.sim.pathLossN * Math.log10(d);
+    }
+
+    function buildAnchorMeasurement(anchorName, ax, ay) {
+      const trueD = dist(ax, ay, state.tag.x, state.tag.y);
+      const raw = Math.max(0, trueD + randn() * state.sim.noiseDist);
+      const filtered = Math.max(0, raw + randn() * (state.sim.noiseDist * 0.4));
+
+      const rssiBase = distanceToRssi(trueD);
+      const rssi = rssiBase + randn() * state.sim.noiseRssi;
+      const fpRssi = rssi - (2 + Math.random() * 6); // first path usually a bit lower / noisier
+
+      return {
+        distance: Number(filtered.toFixed(2)),
+        raw: Number(raw.toFixed(2)),
+        rssi: Number(rssi.toFixed(2)),
+        fp_rssi: Number(fpRssi.toFixed(2)),
+        round_time: randomInt(5_800_000, 13_500_000),
+        reply_time: randomInt(6_500_000, 8_500_000),
+        clock_offset: Number(((Math.random() - 0.5) * 0.00002).toFixed(6))
+      };
+    }
+
+    function buildTelemetryPacket() {
+      const tagId = parseInt($("tagId").value || "10", 10);
+
+      const A1 = buildAnchorMeasurement("A1", state.anchors.A1.x, state.anchors.A1.y);
+      const A2 = buildAnchorMeasurement("A2", state.anchors.A2.x, state.anchors.A2.y);
+      const A3 = buildAnchorMeasurement("A3", state.anchors.A3.x, state.anchors.A3.y);
+
+      // Формат близкий к твоему примеру
+      const payload = {
+        tag_id: tagId,
+        ts: nowMs(),
+        A1, A2, A3
+      };
+
+      return payload;
+    }
+
+    // =========================
+    // MQTT
+    // =========================
+    function mqttPublish(topic, payload, opts = { qos:0, retain:false }) {
+      if (!mqttClient || !mqttConnected) return false;
+      try {
+        mqttClient.publish(topic, typeof payload === "string" ? payload : JSON.stringify(payload), opts);
+        return true;
+      } catch (e) {
+        log("Publish error: " + (e?.message || e), "bad");
+        return false;
+      }
+    }
+
+    function connectMqtt() {
+      const url = $("mqttUrl").value.trim();
+      const clientId = ($("clientId").value || "uwb650_emulator_browser").trim();
+
+      if (!url) {
+        log("MQTT URL пустой", "bad");
+        return;
+      }
+
+      if (mqttClient) {
+        try { mqttClient.end(true); } catch {}
+        mqttClient = null;
+      }
+
+      log(`MQTT connect: ${url} (${clientId})`);
+
+      mqttClient = mqtt.connect(url, {
+        clientId,
+        clean: true,
+        keepalive: 30,
+        reconnectPeriod: 1000,
+        connectTimeout: 5000,
+        will: {
+          topic: $("topicStatus").value.trim() || "uwb/tag/status",
+          payload: JSON.stringify({ status: "offline", ts: nowMs() }),
+          qos: 0,
+          retain: true
+        }
+      });
+
+      mqttClient.on("connect", () => {
+        mqttConnected = true;
+        $("btnConnect").disabled = true;
+        $("btnDisconnect").disabled = false;
+        log("MQTT connected", "ok");
+
+        const statusTopic = $("topicStatus").value.trim() || "uwb/tag/status";
+        mqttPublish(statusTopic, {
+          status: "online",
+          ts: nowMs(),
+          type: "uwb650_emulator",
+          tag_id: parseInt($("tagId").value || "10", 10)
+        }, { qos:0, retain:true });
+
+        updateStatusUi();
+      });
+
+      mqttClient.on("reconnect", () => {
+        log("MQTT reconnecting...");
+      });
+
+      mqttClient.on("close", () => {
+        mqttConnected = false;
+        $("btnConnect").disabled = false;
+        $("btnDisconnect").disabled = true;
+        log("MQTT closed");
+        updateStatusUi();
+      });
+
+      mqttClient.on("error", (e) => {
+        log("MQTT error: " + (e?.message || e), "bad");
+      });
+    }
+
+    function disconnectMqtt() {
+      if (!mqttClient) return;
+
+      const statusTopic = $("topicStatus").value.trim() || "uwb/tag/status";
+      mqttPublish(statusTopic, { status:"offline", ts: nowMs() }, { qos:0, retain:true });
+
+      try { mqttClient.end(false); } catch {}
+      mqttConnected = false;
+      $("btnConnect").disabled = false;
+      $("btnDisconnect").disabled = true;
+      updateStatusUi();
+    }
+
+    // =========================
+    // TX loop
+    // =========================
+    function sendTelemetryOnce() {
+      loadUiToState();
+
+      const payload = buildTelemetryPacket();
+      state.lastPayload = payload;
+      lastPacketTime = payload.ts;
+
+      const telemetryTopic = $("topicTelemetry").value.trim() || "uwb/tag/raw";
+      const ok = mqttPublish(telemetryTopic, payload, { qos:0, retain:false });
+
+      if (ok) {
+        lastTxFlashUntil = performance.now() + 120;
+      }
+
+      if (lastPacketTime && window.__prevPacketTs) {
+        $("dtPacket").textContent = (lastPacketTime - window.__prevPacketTs) + " ms";
+      } else {
+        $("dtPacket").textContent = "—";
+      }
+      window.__prevPacketTs = lastPacketTime;
+
+      updateStatusUi({
+        A1: payload.A1, A2: payload.A2, A3: payload.A3
+      });
+    }
+
+    function restartTxLoop() {
+      if (txTimer) {
+        clearInterval(txTimer);
+        txTimer = null;
+      }
+      if (!txEnabled) return;
+
+      const rateHz = clamp(parseInt($("rateHz").value || "10", 10), 1, 100);
+      const periodMs = Math.round(1000 / rateHz);
+
+      txTimer = setInterval(() => {
+        if (!state.tag.inside) return; // шлем только когда "метка" внутри зоны
+        sendTelemetryOnce();
+      }, periodMs);
+
+      log(`TX loop: ${rateHz} Hz (${periodMs} ms)`);
+    }
+
+    function toggleTx() {
+      txEnabled = !txEnabled;
+      restartTxLoop();
+      updateStatusUi();
+      log("TX " + (txEnabled ? "ON" : "OFF"), txEnabled ? "ok" : "");
+    }
+
+    // =========================
+    // Drawing
+    // =========================
+    function drawGrid(vp) {
+      ctx.save();
+      ctx.strokeStyle = "#1d2430";
+      ctx.lineWidth = 1;
+
+      // vertical 1m
+      for (let x = 0; x <= state.world.w + 1e-6; x += 1) {
+        const p = worldToCanvas(x, 0);
+        ctx.beginPath();
+        ctx.moveTo(Math.round(p.x)+0.5, vp.oy);
+        ctx.lineTo(Math.round(p.x)+0.5, vp.oy + vp.drawH);
+        ctx.stroke();
+      }
+
+      // horizontal 1m
+      for (let y = 0; y <= state.world.h + 1e-6; y += 1) {
+        const p = worldToCanvas(0, y);
+        ctx.beginPath();
+        ctx.moveTo(vp.ox, Math.round(p.y)+0.5);
+        ctx.lineTo(vp.ox + vp.drawW, Math.round(p.y)+0.5);
+        ctx.stroke();
+      }
+
+      // border
+      ctx.strokeStyle = "#364357";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(vp.ox, vp.oy, vp.drawW, vp.drawH);
+      ctx.restore();
+    }
+
+    function drawAnchor(name, a) {
+      const p = worldToCanvas(a.x, a.y);
+      const flash = performance.now() < lastTxFlashUntil;
+
+      ctx.save();
+      // range circle to tag (true geometric line)
+      if (state.tag.inside) {
+        ctx.strokeStyle = "rgba(103,183,255,0.18)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        const tp = worldToCanvas(state.tag.x, state.tag.y);
+        ctx.lineTo(tp.x, tp.y);
+        ctx.stroke();
+      }
+
+      // anchor dot
+      ctx.fillStyle = flash ? "#7CFC93" : "#67b7ff";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 8, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#d6ebff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 12, 0, Math.PI*2);
+      ctx.stroke();
+
+      // label
+      ctx.fillStyle = "#eaf4ff";
+      ctx.font = "bold 13px system-ui, sans-serif";
+      ctx.fillText(name, p.x + 14, p.y - 10);
+      ctx.fillStyle = "#aebcd0";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText(`(${a.x.toFixed(2)}, ${a.y.toFixed(2)}) m`, p.x + 14, p.y + 6);
+      ctx.restore();
+    }
+
+    function drawTag() {
+      const vp = getViewport();
+
+      if (!state.tag.inside) {
+        ctx.save();
+        ctx.fillStyle = "#8d99aa";
+        ctx.font = "14px system-ui, sans-serif";
+        ctx.fillText("Наведи мышь на поле (это будет tag)", vp.ox + 12, vp.oy + 22);
+        ctx.restore();
+        return;
+      }
+
+      const p = worldToCanvas(state.tag.x, state.tag.y);
+      ctx.save();
+
+      // crosshair
+      ctx.strokeStyle = "rgba(255,212,59,0.25)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p.x, vp.oy);
+      ctx.lineTo(p.x, vp.oy + vp.drawH);
+      ctx.moveTo(vp.ox, p.y);
+      ctx.lineTo(vp.ox + vp.drawW, p.y);
+      ctx.stroke();
+
+      // tag
+      ctx.fillStyle = "#ffd43b";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 9, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff2bd";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // label
+      ctx.fillStyle = "#fff7d6";
+      ctx.font = "bold 13px system-ui, sans-serif";
+      ctx.fillText("TAG", p.x + 13, p.y - 8);
+      ctx.fillStyle = "#d5ccb0";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText(`(${state.tag.x.toFixed(2)}, ${state.tag.y.toFixed(2)}) m`, p.x + 13, p.y + 8);
+
+      ctx.restore();
+    }
+
+    function drawTopInfo(vp) {
+      ctx.save();
+      ctx.fillStyle = "#dce7f5";
+      ctx.font = "13px system-ui, sans-serif";
+      const rate = clamp(parseInt($("rateHz").value || "10", 10), 1, 100);
+      ctx.fillText(`Zone: ${state.world.w.toFixed(2)}m × ${state.world.h.toFixed(2)}m | TX: ${txEnabled ? "ON" : "OFF"} @ ${rate} Hz | MQTT: ${mqttConnected ? "OK" : "OFF"}`, vp.ox, vp.oy - 10);
+      ctx.restore();
+    }
+
+    function draw() {
+      loadUiToState();
+
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "#090b10";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      const vp = getViewport();
+      drawGrid(vp);
+      drawTopInfo(vp);
+
+      drawAnchor("A1", state.anchors.A1);
+      drawAnchor("A2", state.anchors.A2);
+      drawAnchor("A3", state.anchors.A3);
+      drawTag();
+
+      requestAnimationFrame(draw);
+    }
+
+    // =========================
+    // Mouse = tag
+    // =========================
+    canvas.addEventListener("mousemove", (e) => {
+      const p = canvasToWorld(e.clientX, e.clientY);
+      state.tag.inside = p.inside;
+      if (p.inside) {
+        state.tag.x = clamp(p.x, 0, state.world.w);
+        state.tag.y = clamp(p.y, 0, state.world.h);
+      }
+      updateStatusUi();
+    });
+
+    canvas.addEventListener("mouseenter", () => {
+      state.tag.inside = true;
+      updateStatusUi();
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      state.tag.inside = false;
+      updateStatusUi();
+    });
+
+    // =========================
+    // Buttons/events
+    // =========================
+    $("btnConnect").onclick = connectMqtt;
+    $("btnDisconnect").onclick = disconnectMqtt;
+
+    $("btnApplyGeometry").onclick = () => {
+      loadUiToState();
+      updateStatusUi();
+      log("Геометрия применена", "ok");
+    };
+
+    $("btnCenterTag").onclick = () => {
+      loadUiToState();
+      state.tag.x = state.world.w / 2;
+      state.tag.y = state.world.h / 2;
+      state.tag.inside = true;
+      updateStatusUi();
+      log("Тег установлен в центр");
+    };
+
+    $("btnSendOnce").onclick = () => {
+      if (!state.tag.inside) {
+        log("Тег вне зоны: наведи мышь на поле или нажми 'Поставить тег в центр'", "bad");
+        return;
+      }
+      sendTelemetryOnce();
+    };
+
+    $("btnToggleTx").onclick = toggleTx;
+
+    $("rateHz").addEventListener("change", restartTxLoop);
+
+    window.addEventListener("beforeunload", () => {
+      try {
+        if (mqttClient && mqttConnected) {
+          const statusTopic = $("topicStatus").value.trim() || "uwb/tag/status";
+          mqttClient.publish(statusTopic, JSON.stringify({status:"offline", ts: nowMs()}), {qos:0, retain:true});
+        }
+      } catch {}
+    });
+
+    // Init
+    pushStateToUi();
+    updateStatusUi();
+    requestAnimationFrame(draw);
+    log("Эмулятор готов. Наведи мышь на поле — это позиция тега.");
+  </script>
+</body>
+</html>
