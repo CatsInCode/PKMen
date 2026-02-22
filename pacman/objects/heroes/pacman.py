@@ -26,8 +26,16 @@ class Pacman(Character, IEventful):
 
     def event_handler(self, event: pg.event.Event) -> None:
         if event.type in self.action and not self.is_dead:
-            self.go()
-            self.__feature_rotate = self.action[event.type]
+            self.set_move_command(self.action[event.type])
+
+    def set_move_command(self, direction: str) -> None:
+        if self.is_dead or direction not in self.direction:
+            return
+        self.go()
+        self.__feature_rotate = direction
+
+    def teleport(self, x: int, y: int) -> None:
+        self.move_center(x, y)
 
     def update(self) -> None:
         self.animator.update()

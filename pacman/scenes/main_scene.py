@@ -7,7 +7,7 @@ from pacman.data_core import Cfg, EvenType, FontCfg, PathUtl, event_append
 from pacman.data_core.data_classes import Cheat
 from pacman.data_core.enums import DifficultEnum, GameStateEnum, GhostStateEnum, SoundCh
 from pacman.misc import HpSystem, ImgObj, LevelLoader, ScoreSystem, is_esc_pressed, rand_color
-from pacman.objects import Blinky, CheatController, Clyde, Fruit, Inky, Map, Pacman, Pinky, SeedContainer, Text
+from pacman.objects import Blinky, CheatController, Clyde, Fruit, Inky, Map, PackKontroller, Pacman, Pinky, SeedContainer, Text
 from pacman.skin import SkinEnum
 from pacman.sound import SoundController, Sounds
 from pacman.storage import LevelStorage, SettingsStorage, SkinStorage
@@ -47,6 +47,7 @@ class MainScene(BaseScene):
         self.__into_text = self.__get__intro_text()
         self.__cheats = self.__get_cheats()
         self.__fruit = Fruit(self.__loader.fruit_pos)
+        self.__pack_kontroller = PackKontroller()
 
         self.__create_heroes()
 
@@ -78,7 +79,8 @@ class MainScene(BaseScene):
         yield self.__seeds
         yield self.__fruit
 
-        yield self.pacman
+        for pacman in self.__pacmans:
+            yield pacman
 
         for ghost in self.__ghosts:
             yield ghost
@@ -111,6 +113,12 @@ class MainScene(BaseScene):
 
     def __create_heroes(self) -> None:
         self.pacman = Pacman(self.__loader)
+        self.pacman_2 = Pacman(self.__loader)
+        self.pacman_2.teleport(self.pacman.rect.centerx + 16, self.pacman.rect.centery)
+        self.__pacmans = [self.pacman, self.pacman_2]
+        self.__pack_kontroller.bind_player(1, self.pacman)
+        self.__pack_kontroller.bind_player(2, self.pacman_2)
+
         self.inky = Inky(self.__loader, len(self.__seeds))
         self.pinky = Pinky(self.__loader, len(self.__seeds))
         self.clyde = Clyde(self.__loader, len(self.__seeds))
@@ -230,6 +238,7 @@ class MainScene(BaseScene):
 
             SceneManager().append(PauseScene(self._screen))
         self.__cheats.event_handler(event)
+        self.__pack_kontroller.event_handler(event)
 
     def on_enter(self) -> None:
         for ch in SoundCh:
