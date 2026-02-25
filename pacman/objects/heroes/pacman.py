@@ -18,6 +18,7 @@ class Pacman(Character, IEventful):
         self.is_dead = False
         self.__feature_rotate = "none"
         self.__ai_timer = 0
+        self.__move_speed = 1.0
         self.animator.stop()
 
     @property
@@ -26,8 +27,37 @@ class Pacman(Character, IEventful):
 
     def event_handler(self, event: pg.event.Event) -> None:
         if event.type in self.action and not self.is_dead:
-            self.go()
-            self.__feature_rotate = self.action[event.type]
+            self.set_move_command(self.action[event.type])
+
+    def set_move_command(self, direction: str) -> None:
+        if self.is_dead or direction not in self.direction:
+            return
+        self.go()
+        self.__feature_rotate = direction
+
+    @staticmethod
+    def __normalize_speed(value: float) -> int:
+        speed = max(1.0, float(value))
+        allowed = (1, 2, 4)
+        return min(allowed, key=lambda item: abs(item - speed))
+
+    def set_move_speed(self, value: float) -> None:
+        self.__move_speed = self.__normalize_speed(value)
+        if self.speed > 0:
+            self.speed = self.__move_speed
+
+    def go(self) -> None:
+        if self.speed != 0:
+            self.animator.start()
+        self.speed = self.__move_speed
+
+    def teleport(self, x: int, y: int) -> None:
+        self.move_center(x, y)
+
+    def stop_move(self) -> None:
+        self.__feature_rotate = "none"
+        self.set_move_speed(1.0)
+        self.stop()
 
     def update(self) -> None:
         self.animator.update()
@@ -39,7 +69,7 @@ class Pacman(Character, IEventful):
                     self.stop()
                     self.animator.set_cur_image(0)
                 c = self.direction[self.__feature_rotate][2]
-                if self.can_rotate_to(c):
+                if c is not None and self.can_rotate_to(c):
                     self.set_direction(self.__feature_rotate)
             super().update()
 

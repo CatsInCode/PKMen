@@ -1,13 +1,15 @@
 from typing import Generator
 
-from pygame import Rect, Surface, time
+from pygame import KEYDOWN, Rect, Surface, key, time
 from pygame.event import Event
 
 from pacman.data_core import Cfg, EvenType, FontCfg, PathUtl, event_append
 from pacman.data_core.data_classes import Cheat
 from pacman.data_core.enums import DifficultEnum, GameStateEnum, GhostStateEnum, SoundCh
 from pacman.misc import HpSystem, ImgObj, LevelLoader, ScoreSystem, is_esc_pressed, rand_color
-from pacman.objects import Blinky, CheatController, Clyde, Fruit, Inky, Map, Pacman, Pinky, SeedContainer, Text
+from pacman.objects import Blinky, CheatController, Clyde, Fruit, Inky, Map, PackKontroller, Pacman, Pinky, SeedContainer, Text
+from pacman.scripts.script_runtime import ScriptAPI, ScriptRunner
+from pacman.scripts.user_script import build_script
 from pacman.skin import SkinEnum
 from pacman.sound import SoundController, Sounds
 from pacman.storage import LevelStorage, SettingsStorage, SkinStorage
@@ -47,6 +49,11 @@ class MainScene(BaseScene):
         self.__into_text = self.__get__intro_text()
         self.__cheats = self.__get_cheats()
         self.__fruit = Fruit(self.__loader.fruit_pos)
+        self.__pack_kontroller = PackKontroller()
+        self.__script_pressed_keys: set[str] = set()
+        self.__last_tick = time.get_ticks()
+        self.__frame_dt = 0.0
+        self.__script_runner = None
 
         self.__create_heroes()
 
@@ -78,7 +85,8 @@ class MainScene(BaseScene):
         yield self.__seeds
         yield self.__fruit
 
-        yield self.pacman
+        for pacman in self.__players.values():
+            yield pacman
 
         for ghost in self.__ghosts:
             yield ghost
@@ -111,12 +119,34 @@ class MainScene(BaseScene):
 
     def __create_heroes(self) -> None:
         self.pacman = Pacman(self.__loader)
+        self.__players: dict[int, Pacman] = {1: self.pacman}
+
+        self.__pack_kontroller.set_player_factory(lambda: Pacman(self.__loader))
+        self.__pack_kontroller.set_spawn_listener(self.__on_player_spawn)
+        self.__pack_kontroller.set_remove_listener(self.__on_player_remove)
+        self.__pack_kontroller.bind_player(1, self.pacman)
+
+        script_api = ScriptAPI(self.__pack_kontroller, self.__script_pressed_keys)
+        self.__script_runner = ScriptRunner(build_script, script_api)
+        self.__script_runner.start()
+
         self.inky = Inky(self.__loader, len(self.__seeds))
         self.pinky = Pinky(self.__loader, len(self.__seeds))
         self.clyde = Clyde(self.__loader, len(self.__seeds))
         self.blinky = Blinky(self.__loader, len(self.__seeds))
 
         self.__ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
+
+
+    def __on_player_spawn(self, player_id: int, pacman: Pacman) -> None:
+        self.__players[player_id] = pacman
+        if pacman not in self._objects:
+            self._objects.append(pacman)
+
+    def __on_player_remove(self, player_id: int, pacman: Pacman) -> None:
+        self.__players.pop(player_id, None)
+        if pacman in self._objects:
+            self._objects.remove(pacman)
 
     def __update_score_text(self):
         self.__scores_value_text.text = f"{self.__score} {'Mb' if SkinStorage().equals(SkinEnum.CHROME) else ''}"
@@ -200,6 +230,7 @@ class MainScene(BaseScene):
             ghost.home_ai(self.__seeds_eaten)
 
     def __game_logic(self):
+        self.__pack_kontroller.update(self.__frame_dt)
         super().process_logic()
         self.__play_sound()
         self.__ghost_ai()
@@ -212,12 +243,22 @@ class MainScene(BaseScene):
     # region Public
 
     def process_logic(self) -> None:
+        now = time.get_ticks()
+        self.__frame_dt = (now - self.__last_tick) / 1000
+        self.__last_tick = now
+
         if self.__state in self.actions:
             self.actions[self.__state]()
+
+        if self.__script_runner is not None:
+            self.__script_runner.update(self.__frame_dt)
+
         self.__cheats.update()
+        self.__script_pressed_keys.clear()
 
     def draw(self) -> Surface:
         super().draw()
+        self.__pack_kontroller.draw_targets(self._screen)
         if self.__state.INTRO:
             for txt in self.__into_text[0:1]:
                 txt.draw(self._screen)
@@ -230,6 +271,8 @@ class MainScene(BaseScene):
 
             SceneManager().append(PauseScene(self._screen))
         self.__cheats.event_handler(event)
+        if event.type == KEYDOWN:
+            self.__script_pressed_keys.add(key.name(event.key).lower())
 
     def on_enter(self) -> None:
         for ch in SoundCh:

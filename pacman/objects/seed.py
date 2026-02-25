@@ -76,6 +76,8 @@ class SeedContainer(IDrawable):
         if not len(self.__seeds):
             return False
         cell = Cell(floor(rect.centerx / 8), floor((rect.centery - 20) / 8))
+        if not (0 <= cell.y < len(self.__seeds) and 0 <= cell.x < len(self.__seeds[cell.y])):
+            return False
         if self.__seeds[cell.y][cell.x] and cell.rect.center == rect.center:
             self.__seeds[cell.y][cell.x] = False
             draw.rect(self.__buffer, (0, 0, 0, 0), cell)

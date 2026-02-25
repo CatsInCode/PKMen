@@ -6,3 +6,4 @@ from .buttons import Btn, BtnController
 from .cheat_controller import CheatController
 from .heroes import *
 from .kb_event import KbEvent
+from .pack_kontroller import PackKontroller
