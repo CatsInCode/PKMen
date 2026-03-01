@@ -14,7 +14,7 @@ class Game:
     def __init__(self) -> None:
         self.__objects = GameObjects()
 
-        self.__screen = display.set_mode(tuple(Cfg.RESOLUTION), SCALED)
+        display.set_mode(tuple(Cfg.RESOLUTION), SCALED)
         self.__clock = time.Clock()
 
         self.__storage_loader = StorageLoader(PathUtl.get("storage.json"))
@@ -56,7 +56,8 @@ class Game:
         SceneManager().current.process_logic()
 
     def __process_all_draw(self) -> None:
-        self.__screen.blit(SceneManager().current.draw(), (0, 0))
+        screen = display.get_surface()
+        screen.blit(SceneManager().current.draw(), (0, 0))
         display.flip()
 
     def main_loop(self) -> None:

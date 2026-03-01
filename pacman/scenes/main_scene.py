@@ -1,6 +1,6 @@
 from typing import Generator
 
-from pygame import KEYDOWN, Rect, Surface, key, time
+from pygame import FULLSCREEN, KEYDOWN, Rect, SCALED, Surface, display, key, time
 from pygame.event import Event
 
 from pacman.data_core import Cfg, EvenType, FontCfg, PathUtl, event_append
@@ -275,6 +275,7 @@ class MainScene(BaseScene):
             self.__script_pressed_keys.add(key.name(event.key).lower())
 
     def on_enter(self) -> None:
+        display.set_mode(tuple(Cfg.RESOLUTION), SCALED | FULLSCREEN)
         for ch in SoundCh:
             SoundController.unpause(ch)
 
@@ -283,6 +284,7 @@ class MainScene(BaseScene):
             SoundController.pause(ch)
 
     def on_first_enter(self) -> None:
+        self.on_enter()
         Sounds.update_random_sounds()
         SoundController.play(SoundCh.BACKGROUND, Sounds.INTRO)
 
