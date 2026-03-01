@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Empty, SimpleQueue
 from threading import Thread
-from tkinter import BOTH, LEFT, RIGHT, Button, Checkbutton, Frame, IntVar, Label, Tk, W, ttk
+from tkinter import BOTH, LEFT, Button, Checkbutton, Frame, IntVar, Label, Tk, W, ttk
 
 
 @dataclass
@@ -19,6 +19,7 @@ class ControlPanel:
         self._level_var: IntVar | None = None
         self._ghosts_var: IntVar | None = None
         self._fullscreen_var: IntVar | None = None
+        self._restart_on_rotate_var: IntVar | None = None
 
     @property
     def is_started(self) -> bool:
@@ -34,7 +35,7 @@ class ControlPanel:
     def _run_ui(self, max_level: int) -> None:
         root = Tk()
         root.title("Pacman Control")
-        root.geometry("320x230")
+        root.geometry("360x270")
         root.resizable(False, False)
 
         body = Frame(root, padx=10, pady=10)
@@ -43,6 +44,7 @@ class ControlPanel:
         self._ghosts_var = IntVar(value=1)
         self._fullscreen_var = IntVar(value=1)
         self._level_var = IntVar(value=1)
+        self._restart_on_rotate_var = IntVar(value=0)
 
         Label(body, text="Управление уровнем").pack(anchor=W)
 
@@ -60,7 +62,17 @@ class ControlPanel:
             variable=self._fullscreen_var,
             command=lambda: self._queue.put(ControlCommand("fullscreen", bool(self._fullscreen_var.get()))),
         )
-        fs_toggle.pack(anchor=W, pady=(6, 8))
+        fs_toggle.pack(anchor=W, pady=(6, 0))
+
+        restart_rotate_toggle = Checkbutton(
+            body,
+            text="Перезапуск при смене ориентации (лучшее качество)",
+            variable=self._restart_on_rotate_var,
+            command=lambda: self._queue.put(
+                ControlCommand("restart_on_rotate", bool(self._restart_on_rotate_var.get()))
+            ),
+        )
+        restart_rotate_toggle.pack(anchor=W, pady=(6, 8))
 
         level_row = Frame(body)
         level_row.pack(fill=BOTH, pady=(4, 8))

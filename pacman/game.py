@@ -18,9 +18,9 @@ class Game:
 
         self.__fullscreen = False
         self.__rotation = 0
+        self.__restart_on_rotate = False
         self.__apply_display_mode()
         self.__clock = time.Clock()
-
 
         self.__storage_loader = StorageLoader(PathUtl.get("storage.json"))
 
@@ -48,9 +48,29 @@ class Game:
 
     # endregion
 
+    def __display_resolution(self) -> tuple[int, int]:
+        if self.__restart_on_rotate and self.__rotation % 180:
+            return Cfg.RESOLUTION.height, Cfg.RESOLUTION.width
+        return tuple(Cfg.RESOLUTION)
+
     def __apply_display_mode(self) -> None:
         flags = SCALED | (FULLSCREEN if self.__fullscreen else 0)
-        display.set_mode(tuple(Cfg.RESOLUTION), flags)
+        display.set_mode(self.__display_resolution(), flags)
+
+    def __restart_current_scene(self) -> None:
+        scene_manager = SceneManager()
+        if isinstance(scene_manager.current, MainScene):
+            scene_manager.reset(MainScene())
+            return
+        if isinstance(scene_manager.current, MenuScene):
+            scene_manager.reset(MenuScene())
+            return
+        scene_manager.current.setup()
+
+    def __handle_rotation_change(self) -> None:
+        if self.__restart_on_rotate:
+            self.__apply_display_mode()
+            self.__restart_current_scene()
 
     def __process_control_panel(self) -> None:
         scene_manager = SceneManager()
@@ -71,8 +91,13 @@ class Game:
                 scene_manager.reset(MainScene())
             elif cmd.name == "rotate_left":
                 self.__rotation = (self.__rotation - 90) % 360
+                self.__handle_rotation_change()
             elif cmd.name == "rotate_right":
                 self.__rotation = (self.__rotation + 90) % 360
+                self.__handle_rotation_change()
+            elif cmd.name == "restart_on_rotate":
+                self.__restart_on_rotate = bool(cmd.value)
+                self.__apply_display_mode()
             elif cmd.name == "fullscreen":
                 self.__fullscreen = bool(cmd.value)
                 self.__apply_display_mode()
