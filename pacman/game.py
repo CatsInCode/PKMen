@@ -50,7 +50,7 @@ class Game:
 
     def __display_resolution(self) -> tuple[int, int]:
         if self.__restart_on_rotate and self.__rotation % 180:
-            return Cfg.RESOLUTION.height, Cfg.RESOLUTION.width
+            return Cfg.RESOLUTION.HEIGHT, Cfg.RESOLUTION.WIDTH
         return tuple(Cfg.RESOLUTION)
 
     def __apply_display_mode(self) -> None:
