@@ -92,13 +92,20 @@ class Game:
     def __process_all_draw(self) -> None:
         screen = display.get_surface()
         frame = SceneManager().current.draw()
+
         if self.__rotation:
-            frame = transform.rotate(frame, self.__rotation)
-            frame_rect = frame.get_rect(center=screen.get_rect().center)
+            rotated = transform.rotate(frame, self.__rotation)
+            screen_w, screen_h = screen.get_size()
+            frame_w, frame_h = rotated.get_size()
+            scale = min(screen_w / frame_w, screen_h / frame_h)
+            target_size = (max(1, int(frame_w * scale)), max(1, int(frame_h * scale)))
+            fitted = transform.smoothscale(rotated, target_size)
+            frame_rect = fitted.get_rect(center=screen.get_rect().center)
             screen.fill((0, 0, 0))
-            screen.blit(frame, frame_rect)
+            screen.blit(fitted, frame_rect)
         else:
             screen.blit(frame, (0, 0))
+
         display.flip()
 
     def main_loop(self) -> None:
