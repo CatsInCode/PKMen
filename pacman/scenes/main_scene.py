@@ -1,6 +1,6 @@
 from typing import Generator
 
-from pygame import FULLSCREEN, KEYDOWN, Rect, SCALED, Surface, display, key, time
+from pygame import KEYDOWN, Rect, Surface, key, time
 from pygame.event import Event
 
 from pacman.data_core import Cfg, EvenType, FontCfg, PathUtl, event_append
@@ -54,6 +54,7 @@ class MainScene(BaseScene):
         self.__last_tick = time.get_ticks()
         self.__frame_dt = 0.0
         self.__script_runner = None
+        self.__ghosts_enabled = True
 
         self.__create_heroes()
 
@@ -135,8 +136,8 @@ class MainScene(BaseScene):
         self.clyde = Clyde(self.__loader, len(self.__seeds))
         self.blinky = Blinky(self.__loader, len(self.__seeds))
 
-        #self.__ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
-        self.__ghosts = []
+        self.__all_ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
+        self.__ghosts = self.__all_ghosts if self.__ghosts_enabled else []
 
     def __on_player_spawn(self, player_id: int, pacman: Pacman) -> None:
         self.__players[player_id] = pacman
@@ -274,8 +275,16 @@ class MainScene(BaseScene):
         if event.type == KEYDOWN:
             self.__script_pressed_keys.add(key.name(event.key).lower())
 
+    def set_ghosts_enabled(self, enabled: bool) -> None:
+        self.__ghosts_enabled = enabled
+        self.__ghosts = self.__all_ghosts if enabled else []
+        for ghost in self.__all_ghosts:
+            if enabled and ghost not in self._objects:
+                self._objects.append(ghost)
+            elif not enabled and ghost in self._objects:
+                self._objects.remove(ghost)
+
     def on_enter(self) -> None:
-        display.set_mode(tuple(Cfg.RESOLUTION), SCALED | FULLSCREEN)
         for ch in SoundCh:
             SoundController.unpause(ch)
 
@@ -284,7 +293,6 @@ class MainScene(BaseScene):
             SoundController.pause(ch)
 
     def on_first_enter(self) -> None:
-        self.on_enter()
         Sounds.update_random_sounds()
         SoundController.play(SoundCh.BACKGROUND, Sounds.INTRO)
 
