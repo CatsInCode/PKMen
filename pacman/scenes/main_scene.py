@@ -135,8 +135,8 @@ class MainScene(BaseScene):
         self.clyde = Clyde(self.__loader, len(self.__seeds))
         self.blinky = Blinky(self.__loader, len(self.__seeds))
 
-        self.__ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
-
+        #self.__ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
+        self.__ghosts = []
 
     def __on_player_spawn(self, player_id: int, pacman: Pacman) -> None:
         self.__players[player_id] = pacman
