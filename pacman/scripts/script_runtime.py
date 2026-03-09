@@ -49,6 +49,9 @@ class ScriptAPI:
     def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
         return self._controller.setTarget(cell_x, cell_y, time_sec)
 
+    def setTraceRoute(self, cells: list[tuple[int, int]], time_sec: float) -> bool:
+        return self._controller.setTraceRoute(cells, time_sec)
+
     def getBlockInfo(self, cell_x: int, cell_y: int) -> bool:
         return self._controller.getBlockInfo(cell_x, cell_y)
 

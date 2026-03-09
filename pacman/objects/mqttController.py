@@ -97,9 +97,13 @@ class MqttUwbController:
         try:
             text = msg.payload.decode("utf-8", errors="replace").strip()
             data = json.loads(text)
-            if not isinstance(data, dict):
+            if isinstance(data, dict):
+                payload = data
+            elif isinstance(data, (int, float, str)):
+                payload = {"value": data}
+            else:
                 return
-            self._q.put(MqttSample(topic=msg.topic, payload=data))
+            self._q.put(MqttSample(topic=msg.topic, payload=payload))
         except Exception as e:
             self._log_q.put(f"[MQTT] bad message: {e}")
 
@@ -117,6 +121,16 @@ class MqttUwbController:
         while True:
             try:
                 out.append(self._log_q.get_nowait())
+            except queue.Empty:
+                break
+        return out
+
+
+    def drain_samples(self) -> list[MqttSample]:
+        out: list[MqttSample] = []
+        while True:
+            try:
+                out.append(self._q.get_nowait())
             except queue.Empty:
                 break
         return out

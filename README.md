@@ -43,3 +43,22 @@ Watch  full video on [YouTube](https://www.youtube.com/watch?v=VpNoZ70wDEg)
 
 ## 🚑 Support 
 Please click the `star` button, if this game was helpful to you.
+
+
+## 📡 MQTT UWB coordinates examples
+Структура поддерживается **только** такая:
+
+- `uwb/tag/coordinate/<name>/x`
+- `uwb/tag/coordinate/<name>/y`
+- `uwb/tag/coordinate/<name>/z` (игнорируется для движения в 2D)
+
+Пример для вашего случая (`pac1`):
+
+```bash
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/x' -m '9'
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/y' -m '28'
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/z' -m '0'
+```
+
+Режим трассировки: если в payload передать `{"mode":"#trace"}`,
+скрипт нарисует маршрут зелёными линиями и зелёную конечную точку.
