@@ -18,6 +18,7 @@ class _TargetMark:
     cell_x: int
     cell_y: int
     left_time: float
+    color: str = "red"
 
 
 @dataclass
@@ -53,12 +54,16 @@ class PackKontroller(IEventful):
     def draw_targets(self, screen: Surface) -> None:
         for target in self._targets:
             cx, cy = CellUtil.get_center_pos((target.cell_x, target.cell_y))
-            draw.circle(screen, Color("red"), (cx, cy), Cfg.TILE_SIZE // 3)
+            draw.circle(screen, Color(target.color), (cx, cy), Cfg.TILE_SIZE // 3)
 
-    def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
+    def setTarget(self, cell_x: int, cell_y: int, time_sec: float, color: str = "red") -> bool:
         if time_sec <= 0:
             return False
-        self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec)))
+        try:
+            Color(color)
+        except ValueError:
+            color = "red"
+        self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec), color=color))
         return True
 
     def set_player_factory(self, factory: Callable[[], object]) -> None:

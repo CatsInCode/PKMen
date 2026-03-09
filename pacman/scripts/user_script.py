@@ -7,7 +7,7 @@ from __future__ import annotations
 # api.remove(id)
 # api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # api.goTo(id, x, y) / api.goToTime(id, x, y, time_sec)
-# api.setTarget(x, y, time_sec)
+# api.setTarget(x, y, time_sec, color="red")
 # api.getBlockInfo(x, y) -> bool
 # yield api.wait(seconds)
 # yield api.wait_key("u")
@@ -141,11 +141,13 @@ def build_script(api):
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
     last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
+    pending_stop_ts_by_player: dict[str, float] = {}
 
     loop_dt = 0.05
-    resend_same_target_sec = 0.25
+    resend_same_target_sec = 0.8
     move_time_sec = 1
-    target_visual_sec = 0.35
+    stop_after_move_extra_sec = 0.12
+    target_visual_sec = 0.45
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -165,23 +167,41 @@ def build_script(api):
         except Exception:
             return False
 
+    def is_area_free_for_pacman(x: int, y: int, size_cells: int = 2) -> bool:
+        for dy in range(size_cells):
+            for dx in range(size_cells):
+                xx, yy = x + dx, y + dy
+                if xx >= layout.map_w_cells or yy >= layout.map_h_cells:
+                    return False
+                if is_likely_wall(xx, yy):
+                    return False
+        return True
+
     def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
         x, y = clamp_cell(x, y)
 
-        if not is_likely_wall(x, y):
+        if is_area_free_for_pacman(x, y, size_cells=2):
             return x, y
 
         for r in range(1, max_r + 1):
             for dy in range(-r, r + 1):
                 for dx in range(-r, r + 1):
                     xx, yy = clamp_cell(x + dx, y + dy)
-                    if not is_likely_wall(xx, yy):
+                    if is_area_free_for_pacman(xx, yy, size_cells=2):
                         return xx, yy
 
         return x, y
 
     while True:
         mqtt_ctrl.drain_logs()
+
+        for player_name, stop_ts in list(pending_stop_ts_by_player.items()):
+            if elapsed >= stop_ts:
+                pac_id = player_ids.get(player_name)
+                if pac_id is not None:
+                    api.stop(pac_id)
+                pending_stop_ts_by_player.pop(player_name, None)
+
 
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
@@ -219,12 +239,14 @@ def build_script(api):
                     api.stop(next_player_id)
                     last_target_cell_by_player[player_name] = None
                     last_send_ts_by_player[player_name] = 0.0
+                    pending_stop_ts_by_player[player_name] = elapsed
                     print(f"Find pacman: {player_name}")
                     print(f"Command: summon - {player_name}")
                     next_player_id += 1
 
                 pac_id = player_ids[player_name]
-                tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
+                requested_tx, requested_ty = clamp_cell(pos_c.x, pos_c.y)
+                tx, ty = find_reachable_candidate(requested_tx, requested_ty, max_r=5)
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
@@ -240,13 +262,18 @@ def build_script(api):
                         need_send = True
 
                 if need_send:
-                    api.setTarget(tx + 1, ty + 1, target_visual_sec)
-                    api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
+                    api.setTarget(requested_tx + 1, requested_ty + 1, target_visual_sec, color="red")
+                    api.setTarget(tx + 1, ty + 1, target_visual_sec, color="green")
+                    sent = api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
 
-                    last_target_cell_by_player[player_name] = (tx, ty)
-                    last_send_ts_by_player[player_name] = elapsed
-
-                    print(f"Command: moveTo - {player_name}")
+                    if sent:
+                        last_target_cell_by_player[player_name] = (tx, ty)
+                        last_send_ts_by_player[player_name] = elapsed
+                        pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
+                        print(f"Command: moveTo - {player_name}")
+                    else:
+                        api.stop(pac_id)
+                        pending_stop_ts_by_player.pop(player_name, None)
 
         yield api.wait(loop_dt)
         elapsed += loop_dt
