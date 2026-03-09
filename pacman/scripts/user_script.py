@@ -22,9 +22,8 @@ _GEOM = None
 
 # Режим парсинга входных сообщений:
 # - "#triangulate": вход = дистанции до якорей (A1/A2/A3), дальше триангуляция
-# - "#coordinates": вход =
-#   - JSON в topic `uwb/tag/coordinates/<name>`: {"x":..., "y":...}
-#   - либо раздельно: `uwb/tag/coordinates/<name>/x` и `/y` с числом в payload
+# - "#coordinates": вход только из topic `uwb/tag/coordinate/<name>/x|y|z`
+#   где движение считается по x/y (z логируется, но не влияет на 2D)
 INPUT_MODE = "#triangulate"
 
 
@@ -55,41 +54,19 @@ def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCel
 
 
 def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict[str, dict[str, int]]) -> PositionCells | None:
-    # Supported topic formats:
-    # - uwb/tag/coordinates/<name>/x|y
-    # - uwb/tag/<name>/x|y
-    # - uwb/tag/x|y (default player)
-    prefix = "uwb/tag/"
+    # Strict supported format (as requested):
+    # - uwb/tag/coordinate/<name>/x|y|z
+    prefix = "uwb/tag/coordinate/"
     if not topic.startswith(prefix):
         return None
 
     suffix = topic[len(prefix):].strip("/")
-    if not suffix:
-        return None
-
     parts = [p for p in suffix.split("/") if p]
-    if not parts:
+    if len(parts) != 2:
         return None
 
-    name = "default"
-    axis = None
-
-    if len(parts) == 1:
-        # uwb/tag/x
-        axis = parts[0].lower()
-    elif len(parts) >= 2 and parts[0] == "coordinates":
-        # uwb/tag/coordinates/<name>/x
-        if len(parts) >= 3:
-            name = parts[1]
-            axis = parts[2].lower()
-        elif len(parts) == 2:
-            axis = parts[1].lower()
-    else:
-        # uwb/tag/<name>/x
-        name = parts[0]
-        axis = parts[1].lower()
-
-    if axis not in {"x", "y"}:
+    name, axis = parts[0], parts[1].lower()
+    if axis not in {"x", "y", "z"}:
         return None
 
     value = payload.get("value")
@@ -105,6 +82,7 @@ def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict
     if name not in cache:
         cache[name] = {}
 
+    # 2D: keep z for debug only, movement uses x/y only
     cache[name][axis] = int(round(value))
 
     x = cache[name].get("x")
@@ -120,21 +98,10 @@ def _extract_player_name(payload: dict, topic: str) -> str | None:
     if isinstance(name, str) and name.strip():
         return name.strip()
 
-    prefix = "uwb/tag/"
+    prefix = "uwb/tag/coordinate/"
     if topic.startswith(prefix):
         parts = [p for p in topic[len(prefix):].split("/") if p]
-        if not parts:
-            return None
-
-        if parts[0] == "coordinates":
-            if len(parts) >= 2 and parts[1] not in {"x", "y", "z"}:
-                return parts[1].strip() or None
-            return "default"
-
-        if parts[0] in {"x", "y", "z"}:
-            return "default"
-
-        if len(parts) >= 2 and parts[1] in {"x", "y", "z"}:
+        if len(parts) >= 1:
             return parts[0].strip() or None
 
     return None
@@ -229,7 +196,7 @@ def build_script(api):
 
             topic_parts = [p for p in sample.topic.split("/") if p]
             is_axis_topic = len(topic_parts) >= 3 and topic_parts[-1] in {"x", "y", "z"}
-            if sample.topic.startswith("uwb/tag/coordinates") or is_axis_topic:
+            if sample.topic.startswith("uwb/tag/coordinate/") and is_axis_topic:
                 mode = "#coordinates"
                 player_name = _extract_player_name(payload, sample.topic) or player_name
                 if player_name and "name" not in payload:
@@ -239,8 +206,6 @@ def build_script(api):
             pos_m = None
             if mode == "#coordinates":
                 pos_c = _extract_coordinates_from_topic_value(sample.topic, payload, coord_cache)
-                if pos_c is None:
-                    pos_c = _extract_coordinates(payload, sample.topic)
 
                 if pos_c is None:
                     topic_axis = topic_parts[-1] if topic_parts else ""

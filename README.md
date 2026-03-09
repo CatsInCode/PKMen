@@ -46,31 +46,16 @@ Please click the `star` button, if this game was helpful to you.
 
 
 ## 📡 MQTT UWB coordinates examples
-If you use `pacman/scripts/user_script.py` with coordinates mode via topic,
-publish messages to:
+Структура поддерживается **только** такая:
 
-- `uwb/tag/coordinates/<name>` with JSON `{ "x": ..., "y": ... }`
-- or split topics: `uwb/tag/coordinates/<name>/x` and `uwb/tag/coordinates/<name>/y`
+- `uwb/tag/coordinate/<name>/x`
+- `uwb/tag/coordinate/<name>/y`
+- `uwb/tag/coordinate/<name>/z` (игнорируется для движения в 2D)
 
-Where `<name>` is the player name (for example, `ivan`). Coordinates are map cells.
+Пример для вашего случая (`pac1`):
 
 ```bash
-# A) Single message with both coordinates
-mosquitto_pub -h 192.168.0.110 -p 1883 \
-  -t 'uwb/tag/coordinates/ivan' \
-  -m '{"x": 10, "y": 20}'
-
-# B) Split topics (as separate updates)
-mosquitto_pub -h 192.168.0.110 -p 1883 \
-  -t 'uwb/tag/coordinates/ivan/x' \
-  -m '10'
-
-mosquitto_pub -h 192.168.0.110 -p 1883 \
-  -t 'uwb/tag/coordinates/ivan/y' \
-  -m '20'
-
-# Next movement for the same player (update only x)
-mosquitto_pub -h 192.168.0.110 -p 1883 \
-  -t 'uwb/tag/coordinates/ivan/x' \
-  -m '30'
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/x' -m '9'
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/y' -m '28'
+mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/z' -m '0'
 ```
