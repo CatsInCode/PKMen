@@ -241,6 +241,25 @@ def build_script(api):
                 pos_c = _extract_coordinates_from_topic_value(sample.topic, payload, coord_cache)
                 if pos_c is None:
                     pos_c = _extract_coordinates(payload, sample.topic)
+
+                if pos_c is None:
+                    topic_axis = topic_parts[-1] if topic_parts else ""
+                    cached = coord_cache.get(player_name, {})
+                    if topic_axis == "z":
+                        print(
+                            f"[MQTT] waiting x+y player={player_name}: got z only, "
+                            f"cached_x={cached.get('x')} cached_y={cached.get('y')}"
+                        )
+                    elif topic_axis in {"x", "y"}:
+                        print(
+                            f"[MQTT] waiting x+y player={player_name}: got {topic_axis}, "
+                            f"cached_x={cached.get('x')} cached_y={cached.get('y')}"
+                        )
+                    else:
+                        print(
+                            f"[MQTT] coordinates not parsed player={player_name} "
+                            f"topic={sample.topic} payload={payload}"
+                        )
             else:
                 res = geom.payload_to_cells(payload)
                 if res is not None:
