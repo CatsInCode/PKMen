@@ -46,11 +46,10 @@ def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCel
     if topic:
         prefix = "uwb/tag/coordinates/"
         if topic.startswith(prefix):
-            topic_name = topic[len(prefix):] or None
+            topic_name = topic[len(prefix):].split("/")[0].strip() or None
 
     _name = payload.get("name") or payload.get("player") or topic_name
-    _z = payload.get("z") or payload.get("Z")
-    _ = (_name, _z)
+    _ = _name
 
     return PositionCells(x=x, y=y)
 
@@ -97,6 +96,20 @@ def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict
     return PositionCells(x=x, y=y)
 
 
+def _extract_player_name(payload: dict, topic: str) -> str | None:
+    name = payload.get("name") or payload.get("player")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+
+    prefix = "uwb/tag/coordinates/"
+    if topic.startswith(prefix):
+        parts = [p for p in topic[len(prefix):].split("/") if p]
+        if parts:
+            return parts[0].strip() or None
+
+    return None
+
+
 def build_script(api):
     global _MQTT_CTRL, _GEOM
 
@@ -125,12 +138,11 @@ def build_script(api):
     geom = _GEOM
     mqtt_ctrl = _MQTT_CTRL
 
-    pac_id = 1
-    api.spawn(pac_id, 1, 3)
-    api.stop(pac_id)
+    player_ids: dict[str, int] = {}
+    next_player_id = 1
 
-    last_target_cell: tuple[int, int] | None = None
-    last_send_ts = 0.0
+    last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
+    last_send_ts_by_player: dict[str, float] = {}
 
     loop_dt = 0.05
     resend_same_target_sec = 0.25
@@ -179,11 +191,9 @@ def build_script(api):
             mode = payload.get("mode", INPUT_MODE)
             if sample.topic.startswith("uwb/tag/coordinates"):
                 mode = "#coordinates"
-                prefix = "uwb/tag/coordinates/"
-                if sample.topic.startswith(prefix):
-                    topic_name = sample.topic[len(prefix):].split("/")[0].strip()
-                    if topic_name and "name" not in payload:
-                        payload["name"] = topic_name
+                player_name = _extract_player_name(payload, sample.topic)
+                if player_name and "name" not in payload:
+                    payload["name"] = player_name
 
             pos_c = None
             pos_m = None
@@ -197,7 +207,22 @@ def build_script(api):
                     pos_m, pos_c = res
 
             if pos_c is not None:
+                player_name = _extract_player_name(payload, sample.topic) or "default"
+
+                if player_name not in player_ids:
+                    player_ids[player_name] = next_player_id
+                    api.spawn(next_player_id, 1, 3)
+                    api.stop(next_player_id)
+                    last_target_cell_by_player[player_name] = None
+                    last_send_ts_by_player[player_name] = 0.0
+                    print(f"[UWB] player connected: {player_name} -> id={next_player_id}")
+                    next_player_id += 1
+
+                pac_id = player_ids[player_name]
                 tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
+
+                last_target_cell = last_target_cell_by_player.get(player_name)
+                last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
 
                 need_send = False
                 if last_target_cell is None:
@@ -213,16 +238,19 @@ def build_script(api):
                     api.setTarget(tx + 1, ty + 1, target_visual_sec)
                     api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
 
-                    last_target_cell = (tx, ty)
-                    last_send_ts = elapsed
+                    last_target_cell_by_player[player_name] = (tx, ty)
+                    last_send_ts_by_player[player_name] = elapsed
 
                     if pos_m is not None:
                         print(
-                            f"[UWB] meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
+                            f"[UWB] player={player_name} meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
                             f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
                         )
                     else:
-                        print(f"[UWB] coordinates mode -> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})")
+                        print(
+                            f"[UWB] player={player_name} coordinates mode "
+                            f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
+                        )
 
         yield api.wait(loop_dt)
         elapsed += loop_dt

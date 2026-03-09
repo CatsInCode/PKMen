@@ -58,7 +58,7 @@ Where `<name>` is the player name (for example, `ivan`). Coordinates are map cel
 # A) Single message with both coordinates
 mosquitto_pub -h 192.168.0.110 -p 1883 \
   -t 'uwb/tag/coordinates/ivan' \
-  -m '{"x": 10, "y": 20, "z": 0}'
+  -m '{"x": 10, "y": 20}'
 
 # B) Split topics (as separate updates)
 mosquitto_pub -h 192.168.0.110 -p 1883 \
