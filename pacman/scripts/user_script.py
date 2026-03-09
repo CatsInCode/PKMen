@@ -55,7 +55,11 @@ def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCel
 
 
 def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict[str, dict[str, int]]) -> PositionCells | None:
-    prefix = "uwb/tag/coordinates/"
+    # Supported topic formats:
+    # - uwb/tag/coordinates/<name>/x|y
+    # - uwb/tag/<name>/x|y
+    # - uwb/tag/x|y (default player)
+    prefix = "uwb/tag/"
     if not topic.startswith(prefix):
         return None
 
@@ -67,8 +71,23 @@ def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict
     if not parts:
         return None
 
-    name = parts[0]
-    axis = parts[1].lower() if len(parts) > 1 else None
+    name = "default"
+    axis = None
+
+    if len(parts) == 1:
+        # uwb/tag/x
+        axis = parts[0].lower()
+    elif len(parts) >= 2 and parts[0] == "coordinates":
+        # uwb/tag/coordinates/<name>/x
+        if len(parts) >= 3:
+            name = parts[1]
+            axis = parts[2].lower()
+        elif len(parts) == 2:
+            axis = parts[1].lower()
+    else:
+        # uwb/tag/<name>/x
+        name = parts[0]
+        axis = parts[1].lower()
 
     if axis not in {"x", "y"}:
         return None
@@ -101,10 +120,21 @@ def _extract_player_name(payload: dict, topic: str) -> str | None:
     if isinstance(name, str) and name.strip():
         return name.strip()
 
-    prefix = "uwb/tag/coordinates/"
+    prefix = "uwb/tag/"
     if topic.startswith(prefix):
         parts = [p for p in topic[len(prefix):].split("/") if p]
-        if parts:
+        if not parts:
+            return None
+
+        if parts[0] == "coordinates":
+            if len(parts) >= 2 and parts[1] not in {"x", "y", "z"}:
+                return parts[1].strip() or None
+            return "default"
+
+        if parts[0] in {"x", "y", "z"}:
+            return "default"
+
+        if len(parts) >= 2 and parts[1] in {"x", "y", "z"}:
             return parts[0].strip() or None
 
     return None
@@ -197,7 +227,9 @@ def build_script(api):
                 f"player={player_name} mode={mode} payload={payload}"
             )
 
-            if sample.topic.startswith("uwb/tag/coordinates"):
+            topic_parts = [p for p in sample.topic.split("/") if p]
+            is_axis_topic = len(topic_parts) >= 3 and topic_parts[-1] in {"x", "y", "z"}
+            if sample.topic.startswith("uwb/tag/coordinates") or is_axis_topic:
                 mode = "#coordinates"
                 player_name = _extract_player_name(payload, sample.topic) or player_name
                 if player_name and "name" not in payload:
