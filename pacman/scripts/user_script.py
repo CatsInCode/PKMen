@@ -22,7 +22,9 @@ _GEOM = None
 
 # Режим парсинга входных сообщений:
 # - "#triangulate": вход = дистанции до якорей (A1/A2/A3), дальше триангуляция
-# - "#coordinates": вход = name игрока (в topic) + x y z (x/y уже в клетках поля)
+# - "#coordinates": вход =
+#   - JSON в topic `uwb/tag/coordinates/<name>`: {"x":..., "y":...}
+#   - либо раздельно: `uwb/tag/coordinates/<name>/x` и `/y` с числом в payload
 INPUT_MODE = "#triangulate"
 
 
@@ -49,6 +51,48 @@ def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCel
     _name = payload.get("name") or payload.get("player") or topic_name
     _z = payload.get("z") or payload.get("Z")
     _ = (_name, _z)
+
+    return PositionCells(x=x, y=y)
+
+
+def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict[str, dict[str, int]]) -> PositionCells | None:
+    prefix = "uwb/tag/coordinates/"
+    if not topic.startswith(prefix):
+        return None
+
+    suffix = topic[len(prefix):].strip("/")
+    if not suffix:
+        return None
+
+    parts = [p for p in suffix.split("/") if p]
+    if not parts:
+        return None
+
+    name = parts[0]
+    axis = parts[1].lower() if len(parts) > 1 else None
+
+    if axis not in {"x", "y"}:
+        return None
+
+    value = payload.get("value")
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            return None
+
+    if not isinstance(value, (int, float)):
+        return None
+
+    if name not in cache:
+        cache[name] = {}
+
+    cache[name][axis] = int(round(value))
+
+    x = cache[name].get("x")
+    y = cache[name].get("y")
+    if x is None or y is None:
+        return None
 
     return PositionCells(x=x, y=y)
 
@@ -95,6 +139,7 @@ def build_script(api):
     dead_zone_cells = 1
 
     elapsed = 0.0
+    coord_cache: dict[str, dict[str, int]] = {}
 
     def clamp_cell(x: int, y: int) -> tuple[int, int]:
         x = max(0, min(layout.map_w_cells - 1, x))
@@ -129,22 +174,23 @@ def build_script(api):
         for line in mqtt_ctrl.drain_logs():
             print(line)
 
-        sample = mqtt_ctrl.get_latest_sample()
-        if sample is not None:
+        for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
             mode = payload.get("mode", INPUT_MODE)
             if sample.topic.startswith("uwb/tag/coordinates"):
                 mode = "#coordinates"
                 prefix = "uwb/tag/coordinates/"
                 if sample.topic.startswith(prefix):
-                    topic_name = sample.topic[len(prefix):].strip("/")
+                    topic_name = sample.topic[len(prefix):].split("/")[0].strip()
                     if topic_name and "name" not in payload:
                         payload["name"] = topic_name
 
             pos_c = None
             pos_m = None
             if mode == "#coordinates":
-                pos_c = _extract_coordinates(payload, sample.topic)
+                pos_c = _extract_coordinates_from_topic_value(sample.topic, payload, coord_cache)
+                if pos_c is None:
+                    pos_c = _extract_coordinates(payload, sample.topic)
             else:
                 res = geom.payload_to_cells(payload)
                 if res is not None:
