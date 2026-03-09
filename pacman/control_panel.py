@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Empty, SimpleQueue
 from threading import Thread
-from tkinter import BOTH, LEFT, Button, Checkbutton, Frame, IntVar, Label, Tk, W, ttk
+from tkinter import BOTH, LEFT, Button, Checkbutton, Frame, IntVar, Label, Spinbox, Tk, W, ttk
 
 
 @dataclass
@@ -16,8 +16,6 @@ class ControlPanel:
     def __init__(self):
         self._queue: SimpleQueue[ControlCommand] = SimpleQueue()
         self._started = False
-        self._level_var: IntVar | None = None
-        self._ghosts_var: IntVar | None = None
         self._fullscreen_var: IntVar | None = None
         self._restart_on_rotate_var: IntVar | None = None
 
@@ -35,26 +33,16 @@ class ControlPanel:
     def _run_ui(self, max_level: int) -> None:
         root = Tk()
         root.title("Pacman Control")
-        root.geometry("360x270")
+        root.geometry("360x300")
         root.resizable(False, False)
 
         body = Frame(root, padx=10, pady=10)
         body.pack(fill=BOTH, expand=True)
 
-        self._ghosts_var = IntVar(value=1)
         self._fullscreen_var = IntVar(value=1)
-        self._level_var = IntVar(value=1)
         self._restart_on_rotate_var = IntVar(value=0)
 
         Label(body, text="Управление уровнем").pack(anchor=W)
-
-        ghosts_toggle = Checkbutton(
-            body,
-            text="Приведения включены",
-            variable=self._ghosts_var,
-            command=lambda: self._queue.put(ControlCommand("ghosts", bool(self._ghosts_var.get()))),
-        )
-        ghosts_toggle.pack(anchor=W, pady=(6, 0))
 
         fs_toggle = Checkbutton(
             body,
@@ -73,6 +61,19 @@ class ControlPanel:
             ),
         )
         restart_rotate_toggle.pack(anchor=W, pady=(6, 8))
+
+        ghosts_row = Frame(body)
+        ghosts_row.pack(fill=BOTH, pady=(2, 8))
+        Label(ghosts_row, text="Кол-во привидений (0-4):").pack(side=LEFT)
+        ghosts_spin = Spinbox(ghosts_row, from_=0, to=4, width=4)
+        ghosts_spin.delete(0, "end")
+        ghosts_spin.insert(0, "4")
+        ghosts_spin.pack(side=LEFT, padx=8)
+        Button(
+            ghosts_row,
+            text="Применить",
+            command=lambda: self._queue.put(ControlCommand("ghost_count", int(ghosts_spin.get()))),
+        ).pack(side=LEFT)
 
         level_row = Frame(body)
         level_row.pack(fill=BOTH, pady=(4, 8))

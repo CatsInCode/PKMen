@@ -19,6 +19,7 @@ class Game:
         self.__fullscreen = False
         self.__rotation = 0
         self.__restart_on_rotate = False
+        self.__ghost_count = 4
         self.__apply_display_mode()
         self.__clock = time.Clock()
 
@@ -60,12 +61,17 @@ class Game:
     def __restart_current_scene(self) -> None:
         scene_manager = SceneManager()
         if isinstance(scene_manager.current, MainScene):
-            scene_manager.reset(MainScene())
+            new_scene = MainScene()
+            scene_manager.reset(new_scene)
+            new_scene.set_ghost_count(self.__ghost_count)
+            self.__apply_display_mode()
             return
         if isinstance(scene_manager.current, MenuScene):
             scene_manager.reset(MenuScene())
+            self.__apply_display_mode()
             return
         scene_manager.current.setup()
+        self.__apply_display_mode()
 
     def __handle_rotation_change(self) -> None:
         if self.__restart_on_rotate:
@@ -79,8 +85,10 @@ class Game:
 
             control_panel.start(LevelStorage().len)
         for cmd in control_panel.read_commands():
-            if cmd.name == "ghosts" and isinstance(scene_manager.current, MainScene):
-                scene_manager.current.set_ghosts_enabled(bool(cmd.value))
+            if cmd.name == "ghost_count":
+                self.__ghost_count = max(0, min(4, int(cmd.value)))
+                if isinstance(scene_manager.current, MainScene):
+                    scene_manager.current.set_ghost_count(self.__ghost_count)
             elif cmd.name == "level":
                 from pacman.storage import LevelStorage
 
@@ -88,7 +96,10 @@ class Game:
                 while level_storage.len_unlocked < level_storage.len:
                     level_storage.unlock_next_level()
                 level_storage.current = int(cmd.value)
-                scene_manager.reset(MainScene())
+                new_scene = MainScene()
+                scene_manager.reset(new_scene)
+                new_scene.set_ghost_count(self.__ghost_count)
+                self.__apply_display_mode()
             elif cmd.name == "rotate_left":
                 self.__rotation = (self.__rotation - 90) % 360
                 self.__handle_rotation_change()
@@ -98,6 +109,8 @@ class Game:
             elif cmd.name == "restart_on_rotate":
                 self.__restart_on_rotate = bool(cmd.value)
                 self.__apply_display_mode()
+                if isinstance(scene_manager.current, MainScene):
+                    scene_manager.current.set_ghost_count(self.__ghost_count)
             elif cmd.name == "fullscreen":
                 self.__fullscreen = bool(cmd.value)
                 self.__apply_display_mode()

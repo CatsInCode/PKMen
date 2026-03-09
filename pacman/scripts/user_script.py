@@ -13,18 +13,43 @@ from __future__ import annotations
 # yield api.wait_key("u")
 
 from pacman.objects.mqttController import MqttUwbController
-from pacman.misc.geometryCalculation import AnchorLayout, Point2D, UwbGeometryCalculator
+from pacman.misc.geometryCalculation import AnchorLayout, Point2D, PositionCells, UwbGeometryCalculator
 
 
 # ===== module-level singletons =====
 _MQTT_CTRL = None
 _GEOM = None
 
+# Режим парсинга входных сообщений:
+# - "#triangulate": вход = дистанции до якорей (A1/A2/A3), дальше триангуляция
+# - "#coordinates": вход = ник игрока + x y z (x/y уже в клетках поля)
+INPUT_MODE = "#triangulate"
+
+
+def _extract_coordinates(payload: dict) -> PositionCells | None:
+    def first_number(*keys):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, (int, float)):
+                return int(round(value))
+        return None
+
+    x = first_number("x", "X", "cell_x", "cx")
+    y = first_number("y", "Y", "cell_y", "cy")
+    if x is None or y is None:
+        return None
+
+    # Наличие ника проверяем мягко, но не валим поток, если формат частично иной
+    _nickname = payload.get("nick") or payload.get("nickname") or payload.get("player") or payload.get("name")
+    _z = payload.get("z") or payload.get("Z")
+    _ = (_nickname, _z)
+
+    return PositionCells(x=x, y=y)
+
 
 def build_script(api):
     global _MQTT_CTRL, _GEOM
 
-    # === Подгони под твой эмулятор UWB ===
     layout = AnchorLayout(
         A1=Point2D(0.5, 0.5),
         A2=Point2D(9.5, 0.5),
@@ -43,7 +68,7 @@ def build_script(api):
             host="192.168.0.110",
             port=1883,
             topic_raw="uwb/tag/raw",
-            client_id=None,  # уникальный
+            client_id=None,
         )
         _MQTT_CTRL.start()
 
@@ -54,16 +79,14 @@ def build_script(api):
     api.spawn(pac_id, 1, 3)
     api.stop(pac_id)
 
-    # Последняя отправленная цель
     last_target_cell: tuple[int, int] | None = None
     last_send_ts = 0.0
 
-    # Параметры поведения (подкрутил для "видимого" движения)
     loop_dt = 0.05
     resend_same_target_sec = 0.25
-    move_time_sec = 1       # было 0.12 -> часто слишком резко/часто
+    move_time_sec = 1
     target_visual_sec = 0.35
-    dead_zone_cells = 1        # если цель изменилась меньше чем на 1 клетку — не дёргаем
+    dead_zone_cells = 1
 
     elapsed = 0.0
 
@@ -73,36 +96,20 @@ def build_script(api):
         return x, y
 
     def is_likely_wall(x: int, y: int) -> bool:
-        """
-        У api.getBlockInfo() семантика может отличаться.
-        Поэтому:
-        - если упадет/непонятно -> считаем НЕ стеной
-        - используем только как эвристику
-        """
         try:
             v = api.getBlockInfo(x, y)
-            # Попробуем обе трактовки через тип:
-            # если bool -> чаще всего True = стена, но это не гарантировано
             if isinstance(v, bool):
                 return v
-            # если что-то иное (int/obj) — не считаем стеной
             return False
         except Exception:
             return False
 
     def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
-        """
-        Берём цель как есть.
-        Если вдруг это стена — ищем рядом.
-        Даже если getBlockInfo трактуется не так, это не ломает движение полностью.
-        """
         x, y = clamp_cell(x, y)
 
-        # Сначала пробуем напрямую
         if not is_likely_wall(x, y):
             return x, y
 
-        # Поиск вокруг
         for r in range(1, max_r + 1):
             for dy in range(-r, r + 1):
                 for dx in range(-r, r + 1):
@@ -110,7 +117,6 @@ def build_script(api):
                     if not is_likely_wall(xx, yy):
                         return xx, yy
 
-        # fallback: всё равно вернуть исходную
         return x, y
 
     while True:
@@ -119,10 +125,19 @@ def build_script(api):
 
         sample = mqtt_ctrl.get_latest_sample()
         if sample is not None:
-            res = geom.payload_to_cells(sample.payload)
-            if res is not None:
-                pos_m, pos_c = res
+            payload = sample.payload
+            mode = payload.get("mode", INPUT_MODE)
 
+            pos_c = None
+            pos_m = None
+            if mode == "#coordinates":
+                pos_c = _extract_coordinates(payload)
+            else:
+                res = geom.payload_to_cells(payload)
+                if res is not None:
+                    pos_m, pos_c = res
+
+            if pos_c is not None:
                 tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
 
                 need_send = False
@@ -130,27 +145,25 @@ def build_script(api):
                     need_send = True
                 else:
                     lx, ly = last_target_cell
-                    # Dead-zone по клеткам
                     if abs(tx - lx) > dead_zone_cells or abs(ty - ly) > dead_zone_cells:
                         need_send = True
                     elif elapsed - last_send_ts >= resend_same_target_sec:
                         need_send = True
 
                 if need_send:
-                    # Подсветка цели (если движок её показывает)
-                    api.setTarget(tx+1, ty+1, target_visual_sec)
-
-                    # Главное движение
-                    print(tx, ty)
-                    api.goToTime(pac_id, tx+1, ty+1, move_time_sec)
+                    api.setTarget(tx + 1, ty + 1, target_visual_sec)
+                    api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
 
                     last_target_cell = (tx, ty)
                     last_send_ts = elapsed
 
-                    print(
-                        f"[UWB] meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
-                        f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
-                    )
+                    if pos_m is not None:
+                        print(
+                            f"[UWB] meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
+                            f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
+                        )
+                    else:
+                        print(f"[UWB] coordinates mode -> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})")
 
         yield api.wait(loop_dt)
         elapsed += loop_dt
