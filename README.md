@@ -43,3 +43,29 @@ Watch  full video on [YouTube](https://www.youtube.com/watch?v=VpNoZ70wDEg)
 
 ## 🚑 Support 
 Please click the `star` button, if this game was helpful to you.
+
+
+## 📡 MQTT UWB coordinates examples
+If you use `pacman/scripts/user_script.py` with coordinates mode via topic,
+publish messages to:
+
+- `uwb/tag/coordinates/<name>`
+
+Where `<name>` is the player name (for example, `ivan`). Coordinates are map cells.
+
+```bash
+# 1) "Connect" / first position for player ivan
+mosquitto_pub -h 192.168.0.110 -p 1883 \
+  -t 'uwb/tag/coordinates/ivan' \
+  -m '{"x": 10, "y": 15, "z": 0}'
+
+# 2) Move same player to another cell
+mosquitto_pub -h 192.168.0.110 -p 1883 \
+  -t 'uwb/tag/coordinates/ivan' \
+  -m '{"x": 13, "y": 15, "z": 0}'
+
+# 3) Optional: include explicit mode
+mosquitto_pub -h 192.168.0.110 -p 1883 \
+  -t 'uwb/tag/coordinates/ivan' \
+  -m '{"mode": "#coordinates", "x": 14, "y": 18, "z": 0}'
+```
