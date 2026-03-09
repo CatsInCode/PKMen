@@ -26,6 +26,12 @@ class _RouteState:
     speed: float
 
 
+@dataclass
+class _TraceMark:
+    cells: list[tuple[int, int]]
+    left_time: float
+
+
 class PackKontroller(IEventful):
     _DIRS = ((1, 0, "right", 0), (0, 1, "down", 1), (-1, 0, "left", 2), (0, -1, "up", 3))
 
@@ -36,6 +42,7 @@ class PackKontroller(IEventful):
         self._on_remove: Callable[[int, object], None] | None = None
         self._routes: dict[int, _RouteState] = {}
         self._targets: list[_TargetMark] = []
+        self._traces: list[_TraceMark] = []
 
     def event_handler(self, event: Event) -> None:
         return
@@ -50,7 +57,19 @@ class PackKontroller(IEventful):
             target.left_time -= dt_seconds
         self._targets = [target for target in self._targets if target.left_time > 0]
 
+        for trace in self._traces:
+            trace.left_time -= dt_seconds
+        self._traces = [trace for trace in self._traces if trace.left_time > 0]
+
     def draw_targets(self, screen: Surface) -> None:
+        for trace in self._traces:
+            if len(trace.cells) >= 2:
+                pts = [CellUtil.get_center_pos(cell) for cell in trace.cells]
+                draw.lines(screen, Color("green"), False, pts, max(2, Cfg.TILE_SIZE // 8))
+            if trace.cells:
+                cx, cy = CellUtil.get_center_pos(trace.cells[-1])
+                draw.circle(screen, Color("green"), (cx, cy), Cfg.TILE_SIZE // 3)
+
         for target in self._targets:
             cx, cy = CellUtil.get_center_pos((target.cell_x, target.cell_y))
             draw.circle(screen, Color("red"), (cx, cy), Cfg.TILE_SIZE // 3)
@@ -59,6 +78,12 @@ class PackKontroller(IEventful):
         if time_sec <= 0:
             return False
         self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec)))
+        return True
+
+    def setTraceRoute(self, cells: list[tuple[int, int]], time_sec: float) -> bool:
+        if time_sec <= 0 or not cells:
+            return False
+        self._traces.append(_TraceMark(list(cells), float(time_sec)))
         return True
 
     def set_player_factory(self, factory: Callable[[], object]) -> None:

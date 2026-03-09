@@ -59,3 +59,6 @@ mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/x' -m '9'
 mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/y' -m '28'
 mosquitto_pub -h 192.168.0.110 -p 1883 -t 'uwb/tag/coordinate/pac1/z' -m '0'
 ```
+
+Режим трассировки: если в payload передать `{"mode":"#trace"}`,
+скрипт нарисует маршрут зелёными линиями и зелёную конечную точку.

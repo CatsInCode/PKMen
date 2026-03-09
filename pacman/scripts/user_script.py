@@ -10,6 +10,7 @@ from collections import deque
 # api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # api.goTo(id, x, y) / api.goToTime(id, x, y, time_sec)
 # api.setTarget(x, y, time_sec)
+# api.setTraceRoute(cells, time_sec)
 # api.getBlockInfo(x, y) -> bool
 # yield api.wait(seconds)
 # yield api.wait_key("u")
@@ -177,11 +178,15 @@ def build_script(api):
             or is_likely_wall(x + 1, y + 1)
         )
 
-    def find_reachable_candidate(desired_x: int, desired_y: int, from_x: int, from_y: int) -> tuple[int, int] | None:
+    def find_reachable_candidate(
+        desired_x: int,
+        desired_y: int,
+        from_x: int,
+        from_y: int,
+    ) -> tuple[tuple[int, int], list[tuple[int, int]]] | None:
         desired_x, desired_y = clamp_cell_2x2(desired_x, desired_y)
         from_x, from_y = clamp_cell_2x2(from_x, from_y)
 
-        # Find closest valid start if current estimate is in wall
         if not is_free_2x2(from_x, from_y):
             nearest_start = None
             best_start_d2 = 10**9
@@ -197,38 +202,42 @@ def build_script(api):
                 return None
             from_x, from_y = nearest_start
 
-        q: deque[tuple[int, int]] = deque()
-        q.append((from_x, from_y))
-        visited = {(from_x, from_y)}
+        start = (from_x, from_y)
+        q: deque[tuple[int, int]] = deque([start])
+        visited = {start}
+        parent: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
 
-        reachable: list[tuple[int, int]] = []
+        best = start
+        best_d2 = (start[0] - desired_x) * (start[0] - desired_x) + (start[1] - desired_y) * (start[1] - desired_y)
+
         while q:
             cx, cy = q.popleft()
-            reachable.append((cx, cy))
+            d2 = (cx - desired_x) * (cx - desired_x) + (cy - desired_y) * (cy - desired_y)
+            if d2 < best_d2:
+                best_d2 = d2
+                best = (cx, cy)
+
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nx, ny = cx + dx, cy + dy
                 if nx < 0 or ny < 0 or nx > layout.map_w_cells - 2 or ny > layout.map_h_cells - 2:
                     continue
-                if (nx, ny) in visited:
+                nxt = (nx, ny)
+                if nxt in visited:
                     continue
                 if not is_free_2x2(nx, ny):
                     continue
-                visited.add((nx, ny))
-                q.append((nx, ny))
+                visited.add(nxt)
+                parent[nxt] = (cx, cy)
+                q.append(nxt)
 
-        if not reachable:
-            return None
+        path: list[tuple[int, int]] = []
+        cur: tuple[int, int] | None = best
+        while cur is not None:
+            path.append(cur)
+            cur = parent.get(cur)
+        path.reverse()
 
-        # Choose reachable cell nearest to desired point
-        best = None
-        best_d2 = 10**9
-        for rx, ry in reachable:
-            d2 = (rx - desired_x) * (rx - desired_x) + (ry - desired_y) * (ry - desired_y)
-            if d2 < best_d2:
-                best_d2 = d2
-                best = (rx, ry)
-
-        return best
+        return best, path
 
     while True:
         for line in mqtt_ctrl.drain_logs():
@@ -237,6 +246,9 @@ def build_script(api):
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
             mode = payload.get("mode", INPUT_MODE)
+            trace_enabled = mode == "#trace"
+            if mode == "#trace":
+                mode = "#coordinates"
             player_name = _extract_player_name(payload, sample.topic) or "default"
 
             print(
@@ -312,13 +324,13 @@ def build_script(api):
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
                 from_x, from_y = last_target_cell or (0, 2)
 
-                reachable_target = find_reachable_candidate(
+                reachable_res = find_reachable_candidate(
                     pos_c.x,
                     pos_c.y,
                     from_x,
                     from_y,
                 )
-                if reachable_target is None:
+                if reachable_res is None:
                     api.stop(pac_id)
                     print(
                         f"[MQTT] no reachable 2x2 target player={player_name} id={pac_id} "
@@ -326,7 +338,7 @@ def build_script(api):
                     )
                     continue
 
-                tx, ty = reachable_target
+                (tx, ty), trace_path = reachable_res
                 if (tx, ty) != (pos_c.x, pos_c.y):
                     print(
                         f"[MQTT] target adjusted player={player_name} "
@@ -344,7 +356,11 @@ def build_script(api):
                         need_send = True
 
                 if need_send:
-                    api.setTarget(tx + 1, ty + 1, target_visual_sec)
+                    if trace_enabled:
+                        trace_cells = [(px + 1, py + 1) for px, py in trace_path]
+                        api.setTraceRoute(trace_cells, 1.0)
+                    else:
+                        api.setTarget(tx + 1, ty + 1, target_visual_sec)
                     api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
 
                     last_target_cell_by_player[player_name] = (tx, ty)
