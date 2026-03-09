@@ -54,6 +54,7 @@ class MainScene(BaseScene):
         self.__last_tick = time.get_ticks()
         self.__frame_dt = 0.0
         self.__script_runner = None
+        self.__ghost_count = 4
 
         self.__create_heroes()
 
@@ -135,8 +136,8 @@ class MainScene(BaseScene):
         self.clyde = Clyde(self.__loader, len(self.__seeds))
         self.blinky = Blinky(self.__loader, len(self.__seeds))
 
-        #self.__ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
-        self.__ghosts = []
+        self.__all_ghosts = [self.blinky, self.pinky, self.inky, self.clyde]
+        self.__ghosts = self.__all_ghosts[: self.__ghost_count]
 
     def __on_player_spawn(self, player_id: int, pacman: Pacman) -> None:
         self.__players[player_id] = pacman
@@ -273,6 +274,16 @@ class MainScene(BaseScene):
         self.__cheats.event_handler(event)
         if event.type == KEYDOWN:
             self.__script_pressed_keys.add(key.name(event.key).lower())
+
+    def set_ghost_count(self, count: int) -> None:
+        self.__ghost_count = max(0, min(4, int(count)))
+        self.__ghosts = self.__all_ghosts[: self.__ghost_count]
+        for idx, ghost in enumerate(self.__all_ghosts):
+            should_be_present = idx < self.__ghost_count
+            if should_be_present and ghost not in self._objects:
+                self._objects.append(ghost)
+            elif not should_be_present and ghost in self._objects:
+                self._objects.remove(ghost)
 
     def on_enter(self) -> None:
         for ch in SoundCh:

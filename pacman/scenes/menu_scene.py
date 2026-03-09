@@ -1,6 +1,6 @@
 from typing import Generator
 
-from pygame import Rect, Surface
+from pygame import FULLSCREEN, Rect, SCALED, Surface, display
 from pygame.event import Event
 
 from pacman.data_core import Cfg, Colors, EvenType, FontCfg, event_append
@@ -40,6 +40,7 @@ class MenuScene(BaseScene):
         from pacman.scenes.main_scene import MainScene
 
         event_append(EvenType.SET_SETTINGS)
+        display.set_mode(tuple(Cfg.RESOLUTION), SCALED | FULLSCREEN)
         SceneManager().append(MainScene(self.__map_color))
 
     def __get_buttons(self) -> list[Btn]:
@@ -95,7 +96,11 @@ class MenuScene(BaseScene):
         return self._screen
 
     def on_enter(self) -> None:
+        display.set_mode(tuple(Cfg.RESOLUTION), SCALED)
         self.__pacman_anim = SkinStorage().current_instance.walk
         self.__level_text.text = f"{LevelStorage()}"
+
+    def on_first_enter(self) -> None:
+        self.on_enter()
 
     # endregion
