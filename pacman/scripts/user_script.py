@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import deque
+
 # Edit only this function.
 # Commands available:
 ## x/y are map cell coordinates
@@ -151,9 +153,10 @@ def build_script(api):
     elapsed = 0.0
     coord_cache: dict[str, dict[str, int]] = {}
 
-    def clamp_cell(x: int, y: int) -> tuple[int, int]:
-        x = max(0, min(layout.map_w_cells - 1, x))
-        y = max(0, min(layout.map_h_cells - 1, y))
+    def clamp_cell_2x2(x: int, y: int) -> tuple[int, int]:
+        # Pacman occupies 2x2 cells, so target anchor must allow +1 on both axes
+        x = max(0, min(layout.map_w_cells - 2, x))
+        y = max(0, min(layout.map_h_cells - 2, y))
         return x, y
 
     def is_likely_wall(x: int, y: int) -> bool:
@@ -165,20 +168,67 @@ def build_script(api):
         except Exception:
             return False
 
-    def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
-        x, y = clamp_cell(x, y)
+    def is_free_2x2(x: int, y: int) -> bool:
+        x, y = clamp_cell_2x2(x, y)
+        return not (
+            is_likely_wall(x, y)
+            or is_likely_wall(x + 1, y)
+            or is_likely_wall(x, y + 1)
+            or is_likely_wall(x + 1, y + 1)
+        )
 
-        if not is_likely_wall(x, y):
-            return x, y
+    def find_reachable_candidate(desired_x: int, desired_y: int, from_x: int, from_y: int) -> tuple[int, int] | None:
+        desired_x, desired_y = clamp_cell_2x2(desired_x, desired_y)
+        from_x, from_y = clamp_cell_2x2(from_x, from_y)
 
-        for r in range(1, max_r + 1):
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    xx, yy = clamp_cell(x + dx, y + dy)
-                    if not is_likely_wall(xx, yy):
-                        return xx, yy
+        # Find closest valid start if current estimate is in wall
+        if not is_free_2x2(from_x, from_y):
+            nearest_start = None
+            best_start_d2 = 10**9
+            for yy in range(0, layout.map_h_cells - 1):
+                for xx in range(0, layout.map_w_cells - 1):
+                    if not is_free_2x2(xx, yy):
+                        continue
+                    d2 = (xx - from_x) * (xx - from_x) + (yy - from_y) * (yy - from_y)
+                    if d2 < best_start_d2:
+                        best_start_d2 = d2
+                        nearest_start = (xx, yy)
+            if nearest_start is None:
+                return None
+            from_x, from_y = nearest_start
 
-        return x, y
+        q: deque[tuple[int, int]] = deque()
+        q.append((from_x, from_y))
+        visited = {(from_x, from_y)}
+
+        reachable: list[tuple[int, int]] = []
+        while q:
+            cx, cy = q.popleft()
+            reachable.append((cx, cy))
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = cx + dx, cy + dy
+                if nx < 0 or ny < 0 or nx > layout.map_w_cells - 2 or ny > layout.map_h_cells - 2:
+                    continue
+                if (nx, ny) in visited:
+                    continue
+                if not is_free_2x2(nx, ny):
+                    continue
+                visited.add((nx, ny))
+                q.append((nx, ny))
+
+        if not reachable:
+            return None
+
+        # Choose reachable cell nearest to desired point
+        best = None
+        best_d2 = 10**9
+        for rx, ry in reachable:
+            d2 = (rx - desired_x) * (rx - desired_x) + (ry - desired_y) * (ry - desired_y)
+            if d2 < best_d2:
+                best_d2 = d2
+                best = (rx, ry)
+
+        return best
 
     while True:
         for line in mqtt_ctrl.drain_logs():
@@ -257,10 +307,31 @@ def build_script(api):
                     next_player_id += 1
 
                 pac_id = player_ids[player_name]
-                tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
+                from_x, from_y = last_target_cell or (0, 2)
+
+                reachable_target = find_reachable_candidate(
+                    pos_c.x,
+                    pos_c.y,
+                    from_x,
+                    from_y,
+                )
+                if reachable_target is None:
+                    api.stop(pac_id)
+                    print(
+                        f"[MQTT] no reachable 2x2 target player={player_name} id={pac_id} "
+                        f"requested=({pos_c.x},{pos_c.y}) -> stop"
+                    )
+                    continue
+
+                tx, ty = reachable_target
+                if (tx, ty) != (pos_c.x, pos_c.y):
+                    print(
+                        f"[MQTT] target adjusted player={player_name} "
+                        f"requested=({pos_c.x},{pos_c.y}) adjusted=({tx},{ty})"
+                    )
 
                 need_send = False
                 if last_target_cell is None:
