@@ -22,11 +22,11 @@ _GEOM = None
 
 # Режим парсинга входных сообщений:
 # - "#triangulate": вход = дистанции до якорей (A1/A2/A3), дальше триангуляция
-# - "#coordinates": вход = ник игрока + x y z (x/y уже в клетках поля)
+# - "#coordinates": вход = name игрока (в topic) + x y z (x/y уже в клетках поля)
 INPUT_MODE = "#triangulate"
 
 
-def _extract_coordinates(payload: dict) -> PositionCells | None:
+def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCells | None:
     def first_number(*keys):
         for key in keys:
             value = payload.get(key)
@@ -39,10 +39,16 @@ def _extract_coordinates(payload: dict) -> PositionCells | None:
     if x is None or y is None:
         return None
 
-    # Наличие ника проверяем мягко, но не валим поток, если формат частично иной
-    _nickname = payload.get("nick") or payload.get("nickname") or payload.get("player") or payload.get("name")
+    # Имя игрока читаем из payload либо из topic: uwb/tag/coordinates/<name>
+    topic_name = None
+    if topic:
+        prefix = "uwb/tag/coordinates/"
+        if topic.startswith(prefix):
+            topic_name = topic[len(prefix):] or None
+
+    _name = payload.get("name") or payload.get("player") or topic_name
     _z = payload.get("z") or payload.get("Z")
-    _ = (_nickname, _z)
+    _ = (_name, _z)
 
     return PositionCells(x=x, y=y)
 
@@ -67,7 +73,7 @@ def build_script(api):
         _MQTT_CTRL = MqttUwbController(
             host="192.168.0.110",
             port=1883,
-            topic_raw="uwb/tag/raw",
+            topic_raw="uwb/tag/#",
             client_id=None,
         )
         _MQTT_CTRL.start()
@@ -127,11 +133,18 @@ def build_script(api):
         if sample is not None:
             payload = sample.payload
             mode = payload.get("mode", INPUT_MODE)
+            if sample.topic.startswith("uwb/tag/coordinates"):
+                mode = "#coordinates"
+                prefix = "uwb/tag/coordinates/"
+                if sample.topic.startswith(prefix):
+                    topic_name = sample.topic[len(prefix):].strip("/")
+                    if topic_name and "name" not in payload:
+                        payload["name"] = topic_name
 
             pos_c = None
             pos_m = None
             if mode == "#coordinates":
-                pos_c = _extract_coordinates(payload)
+                pos_c = _extract_coordinates(payload, sample.topic)
             else:
                 res = geom.payload_to_cells(payload)
                 if res is not None:
