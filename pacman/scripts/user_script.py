@@ -143,6 +143,7 @@ def build_script(api):
 
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
     last_send_ts_by_player: dict[str, float] = {}
+    last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
 
     loop_dt = 0.05
     resend_same_target_sec = 0.25
@@ -189,9 +190,16 @@ def build_script(api):
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
             mode = payload.get("mode", INPUT_MODE)
+            player_name = _extract_player_name(payload, sample.topic) or "default"
+
+            print(
+                f"[MQTT] sample topic={sample.topic} "
+                f"player={player_name} mode={mode} payload={payload}"
+            )
+
             if sample.topic.startswith("uwb/tag/coordinates"):
                 mode = "#coordinates"
-                player_name = _extract_player_name(payload, sample.topic)
+                player_name = _extract_player_name(payload, sample.topic) or player_name
                 if player_name and "name" not in payload:
                     payload["name"] = player_name
 
@@ -208,6 +216,20 @@ def build_script(api):
 
             if pos_c is not None:
                 player_name = _extract_player_name(payload, sample.topic) or "default"
+
+                prev_input = last_input_cell_by_player.get(player_name)
+                cur_input = (pos_c.x, pos_c.y)
+                if prev_input != cur_input:
+                    print(
+                        f"[MQTT] coordinates changed player={player_name} "
+                        f"from={prev_input} to={cur_input}"
+                    )
+                else:
+                    print(
+                        f"[MQTT] coordinates unchanged player={player_name} "
+                        f"cell={cur_input}"
+                    )
+                last_input_cell_by_player[player_name] = cur_input
 
                 if player_name not in player_ids:
                     player_ids[player_name] = next_player_id
@@ -241,6 +263,11 @@ def build_script(api):
                     last_target_cell_by_player[player_name] = (tx, ty)
                     last_send_ts_by_player[player_name] = elapsed
 
+                    print(
+                        f"[MQTT] command sent player={player_name} id={pac_id} "
+                        f"target_cell=({tx},{ty}) visual=({tx + 1},{ty + 1})"
+                    )
+
                     if pos_m is not None:
                         print(
                             f"[UWB] player={player_name} meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
@@ -251,6 +278,12 @@ def build_script(api):
                             f"[UWB] player={player_name} coordinates mode "
                             f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
                         )
+                else:
+                    print(
+                        f"[MQTT] command skipped player={player_name} id={pac_id} "
+                        f"target_cell=({tx},{ty}) last_target={last_target_cell} "
+                        f"elapsed={elapsed:.2f} last_send={last_send_ts:.2f}"
+                    )
 
         yield api.wait(loop_dt)
         elapsed += loop_dt
