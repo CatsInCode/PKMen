@@ -146,9 +146,8 @@ def build_script(api):
     blocked_players: set[str] = set()
 
     loop_dt = 0.05
-    resend_same_target_sec = 0.8
     move_time_sec = 1
-    stop_after_move_extra_sec = 0.12
+    stop_after_move_extra_sec = 0.20
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -235,20 +234,18 @@ def build_script(api):
                 requested_tx, requested_ty = clamp_cell(raw_x, raw_y)
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
-                last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
-
                 need_send = False
                 if last_target_cell is None:
                     need_send = True
                 else:
                     lx, ly = last_target_cell
+
+                    # Новую команду шлём только если цель реально сменилась заметно.
                     if abs(requested_tx - lx) > dead_zone_cells or abs(requested_ty - ly) > dead_zone_cells:
-                        need_send = True
-                    elif elapsed - last_send_ts >= resend_same_target_sec:
                         need_send = True
 
                 if need_send:
-                    sent = api.goToTime(pac_id, requested_tx + 1, requested_ty + 1, move_time_sec)
+                    sent = api.goToTime(pac_id, requested_tx, requested_ty, move_time_sec)
 
                     if sent:
                         last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
@@ -256,9 +253,9 @@ def build_script(api):
                         pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
                         print(f"Command: moveTo - {player_name}")
                     else:
-                        api.stop(pac_id)
+                        # Не дёргаем игрока лишним stop на каждом плохом пакете,
+                        # просто не обновляем target.
                         pending_stop_ts_by_player.pop(player_name, None)
-                        last_target_cell_by_player[player_name] = None
 
         control_panel.set_active_players([name for name in player_ids.keys() if name not in blocked_players])
 

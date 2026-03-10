@@ -303,21 +303,30 @@ class PackKontroller(IEventful):
             return
 
         target_cell = route.cells[-1]
+        current_cell = pacman.get_cell()
+
+        # 1) Самый жёсткий и надёжный кейс:
+        # если уже оказались в целевой клетке, сразу защёлкиваем в её центр и завершаем маршрут.
+        if current_cell == target_cell:
+            target_cx, target_cy = CellUtil.get_center_pos(target_cell)
+            pacman.teleport(target_cx, target_cy)
+            pacman.stop_move()
+            self._routes.pop(player_id, None)
+            return
+
+        # 2) Дополнительная страховка от проскока центра на высокой скорости:
+        # если центр пакмана уже достаточно близко к центру конечной клетки,
+        # тоже защёлкиваем и завершаем маршрут.
         target_cx, target_cy = CellUtil.get_center_pos(target_cell)
-        tolerance_px = max(1.0, float(route.speed))
+        tolerance_px = max(2.0, float(route.speed) + 1.0)
         if abs(pacman.rect.centerx - target_cx) <= tolerance_px and abs(pacman.rect.centery - target_cy) <= tolerance_px:
             pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
             self._routes.pop(player_id, None)
             return
 
+        # 3) Направление меняем только в центре клетки.
         if not CellUtil.is_in_cell_center(pacman.rect):
-            return
-
-        current_cell = pacman.get_cell()
-        if current_cell == route.cells[-1]:
-            pacman.stop_move()
-            self._routes.pop(player_id, None)
             return
 
         self._apply_next_direction(player_id)
@@ -329,13 +338,27 @@ class PackKontroller(IEventful):
             return
 
         current = pacman.get_cell()
-        if current not in route.cells:
+        target = route.cells[-1]
+
+        if current == target:
+            target_cx, target_cy = CellUtil.get_center_pos(target)
+            pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
             self._routes.pop(player_id, None)
             return
 
-        idx = route.cells.index(current)
+        try:
+            idx = route.cells.index(current)
+        except ValueError:
+            # Если пакман немного рассинхронизировался с route.cells,
+            # просто не ломаемся мгновенно, а завершаем маршрут мягко.
+            pacman.stop_move()
+            self._routes.pop(player_id, None)
+            return
+
         if idx >= len(route.cells) - 1:
+            target_cx, target_cy = CellUtil.get_center_pos(target)
+            pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
             self._routes.pop(player_id, None)
             return
@@ -343,6 +366,7 @@ class PackKontroller(IEventful):
         nxt = route.cells[idx + 1]
         dx = nxt[0] - current[0]
         dy = nxt[1] - current[1]
+
         if dx > 1:
             dx = -1
         elif dx < -1:
@@ -358,6 +382,7 @@ class PackKontroller(IEventful):
             (0, 1): "down",
             (0, -1): "up",
         }.get((dx, dy))
+
         if direction is None:
             pacman.stop_move()
             self._routes.pop(player_id, None)
