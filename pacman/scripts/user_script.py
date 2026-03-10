@@ -142,12 +142,9 @@ def build_script(api):
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
     last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
-    pending_stop_ts_by_player: dict[str, float] = {}
     blocked_players: set[str] = set()
 
     loop_dt = 0.05
-    move_time_sec = 1
-    stop_after_move_extra_sec = 0.20
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -171,16 +168,7 @@ def build_script(api):
             last_target_cell_by_player.pop(kicked_name, None)
             last_send_ts_by_player.pop(kicked_name, None)
             last_input_cell_by_player.pop(kicked_name, None)
-            pending_stop_ts_by_player.pop(kicked_name, None)
             coord_cache.pop(kicked_name, None)
-
-        for player_name, stop_ts in list(pending_stop_ts_by_player.items()):
-            if elapsed >= stop_ts:
-                pac_id = player_ids.get(player_name)
-                if pac_id is not None:
-                    api.stop(pac_id)
-                pending_stop_ts_by_player.pop(player_name, None)
-
 
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
@@ -220,7 +208,6 @@ def build_script(api):
                     api.stop(next_player_id)
                     last_target_cell_by_player[player_name] = None
                     last_send_ts_by_player[player_name] = 0.0
-                    pending_stop_ts_by_player[player_name] = elapsed
                     print(f"Find pacman: {player_name}")
                     print(f"Command: summon - {player_name}")
                     next_player_id += 1
@@ -245,17 +232,16 @@ def build_script(api):
                         need_send = True
 
                 if need_send:
-                    sent = api.goToTime(pac_id, requested_tx, requested_ty, move_time_sec)
+                    sent = api.goTo(pac_id, requested_tx, requested_ty)
 
                     if sent:
                         last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
                         last_send_ts_by_player[player_name] = elapsed
-                        pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
                         print(f"Command: moveTo - {player_name}")
                     else:
                         # Не дёргаем игрока лишним stop на каждом плохом пакете,
                         # просто не обновляем target.
-                        pending_stop_ts_by_player.pop(player_name, None)
+                        pass
 
         control_panel.set_active_players([name for name in player_ids.keys() if name not in blocked_players])
 
