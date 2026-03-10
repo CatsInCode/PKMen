@@ -177,21 +177,6 @@ def build_script(api):
                     return False
         return True
 
-    def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
-        x, y = clamp_cell(x, y)
-
-        if is_area_free_for_pacman(x, y, size_cells=2):
-            return x, y
-
-        for r in range(1, max_r + 1):
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    xx, yy = clamp_cell(x + dx, y + dy)
-                    if is_area_free_for_pacman(xx, yy, size_cells=2):
-                        return xx, yy
-
-        return x, y
-
     while True:
         mqtt_ctrl.drain_logs()
 
@@ -246,7 +231,16 @@ def build_script(api):
 
                 pac_id = player_ids[player_name]
                 requested_tx, requested_ty = clamp_cell(pos_c.x, pos_c.y)
-                tx, ty = find_reachable_candidate(requested_tx, requested_ty, max_r=5)
+
+                api.setTarget(requested_tx + 1, requested_ty + 1, target_visual_sec, color="red")
+                if not is_area_free_for_pacman(requested_tx, requested_ty, size_cells=2):
+                    api.stop(pac_id)
+                    pending_stop_ts_by_player.pop(player_name, None)
+                    last_target_cell_by_player[player_name] = None
+                    continue
+
+                tx, ty = requested_tx, requested_ty
+                api.setTarget(tx + 1, ty + 1, target_visual_sec, color="green")
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
@@ -262,8 +256,6 @@ def build_script(api):
                         need_send = True
 
                 if need_send:
-                    api.setTarget(requested_tx + 1, requested_ty + 1, target_visual_sec, color="red")
-                    api.setTarget(tx + 1, ty + 1, target_visual_sec, color="green")
                     sent = api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
 
                     if sent:
