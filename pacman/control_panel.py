@@ -21,6 +21,7 @@ class ControlPanel:
         self._mqtt_invert_x_var: IntVar | None = None
         self._mqtt_invert_y_var: IntVar | None = None
         self._show_paths_var: IntVar | None = None
+        self._render_pacmans_var: IntVar | None = None
         self._mqtt_invert_x_enabled = True
         self._mqtt_invert_y_enabled = True
         self._active_players: list[str] = []
@@ -74,7 +75,7 @@ class ControlPanel:
     def _run_ui(self, max_level: int) -> None:
         root = Tk()
         root.title("Pacman Control")
-        root.geometry("420x460")
+        root.geometry("420x500")
         root.resizable(False, False)
 
         body = Frame(root, padx=10, pady=10)
@@ -85,6 +86,7 @@ class ControlPanel:
         self._mqtt_invert_x_var = IntVar(value=1)
         self._mqtt_invert_y_var = IntVar(value=1)
         self._show_paths_var = IntVar(value=1)
+        self._render_pacmans_var = IntVar(value=1)
 
         Label(body, text="Управление уровнем").pack(anchor=W)
 
@@ -128,7 +130,15 @@ class ControlPanel:
             variable=self._show_paths_var,
             command=lambda: self._queue.put(ControlCommand("show_paths", bool(self._show_paths_var.get()))),
         )
-        show_paths_toggle.pack(anchor=W, pady=(2, 8))
+        show_paths_toggle.pack(anchor=W, pady=(2, 4))
+
+        render_pacmans_toggle = Checkbutton(
+            body,
+            text="Рендер пакменов (если выключить — только точки)",
+            variable=self._render_pacmans_var,
+            command=lambda: self._queue.put(ControlCommand("render_pacmans", bool(self._render_pacmans_var.get()))),
+        )
+        render_pacmans_toggle.pack(anchor=W, pady=(2, 8))
 
         ghosts_row = Frame(body)
         ghosts_row.pack(fill=BOTH, pady=(2, 8))

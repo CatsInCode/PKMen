@@ -154,14 +154,13 @@ class PackKontroller(IEventful):
         return collision_map[cell_y][cell_x] != 0
 
     def goTo(self, player_id: int, cell_x: int, cell_y: int) -> bool:
-        return self._start_route(player_id, cell_x, cell_y, None)
+        return self._start_route(player_id, cell_x, cell_y)
 
     def goToTime(self, player_id: int, cell_x: int, cell_y: int, time_sec: float) -> bool:
-        if time_sec <= 0:
-            return False
-        return self._start_route(player_id, cell_x, cell_y, time_sec)
+        # Совместимость API: временной параметр больше не влияет на движение.
+        return self.goTo(player_id, cell_x, cell_y)
 
-    def _start_route(self, player_id: int, target_x: int, target_y: int, time_sec: float | None) -> bool:
+    def _start_route(self, player_id: int, target_x: int, target_y: int) -> bool:
         pacman = self._players.get(player_id)
         if pacman is None:
             return False
@@ -184,11 +183,6 @@ class PackKontroller(IEventful):
             return True
 
         speed = 1.0
-        if time_sec is not None:
-            steps = len(path) - 1
-            distance_px = steps * Cfg.TILE_SIZE
-            speed = max(1.0, distance_px / (time_sec * Cfg.FPS))
-
         pacman.set_move_speed(speed)
         self._routes[player_id] = _RouteState(path, speed)
         self._apply_next_direction(player_id)
@@ -312,7 +306,7 @@ class PackKontroller(IEventful):
         target_cell = route.cells[-1]
         current_cell = pacman.get_cell()
 
-        if self._is_within_target_radius(pacman, current_cell, target_cell, radius_cells=1):
+        if current_cell == target_cell:
             target_cx, target_cy = CellUtil.get_center_pos(target_cell)
             pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
@@ -334,7 +328,7 @@ class PackKontroller(IEventful):
         current = pacman.get_cell()
         target = route.cells[-1]
 
-        if self._is_within_target_radius(pacman, current, target, radius_cells=1):
+        if current == target:
             target_cx, target_cy = CellUtil.get_center_pos(target)
             pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
@@ -377,25 +371,6 @@ class PackKontroller(IEventful):
 
         pacman.set_move_speed(route.speed)
         pacman.set_move_command(direction)
-
-    def _is_within_target_radius(
-        self,
-        pacman,
-        current: tuple[int, int],
-        target: tuple[int, int],
-        radius_cells: int = 1,
-    ) -> bool:
-        collision_map = pacman.level_loader.collision_map
-        rows = len(collision_map)
-        cols = len(collision_map[0]) if rows else 0
-        if cols <= 0 or rows <= 0:
-            return False
-
-        dx = abs(current[0] - target[0])
-        dy = abs(current[1] - target[1])
-        dx = min(dx, cols - dx)
-        dy = min(dy, rows - dy)
-        return dx <= radius_cells and dy <= radius_cells
 
     def _rebuild_route_from_current(self, player_id: int, speed: float) -> bool:
         pacman = self._players.get(player_id)

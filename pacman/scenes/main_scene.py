@@ -55,6 +55,7 @@ class MainScene(BaseScene):
         self.__frame_dt = 0.0
         self.__script_runner = None
         self.__ghost_count = 4
+        self.__render_pacmans = True
 
         self.__create_heroes()
 
@@ -86,8 +87,9 @@ class MainScene(BaseScene):
         yield self.__seeds
         yield self.__fruit
 
-        for pacman in self.__players.values():
-            yield pacman
+        if self.__render_pacmans:
+            for pacman in self.__players.values():
+                yield pacman
 
         for ghost in self.__ghosts:
             yield ghost
@@ -141,7 +143,7 @@ class MainScene(BaseScene):
 
     def __on_player_spawn(self, player_id: int, pacman: Pacman) -> None:
         self.__players[player_id] = pacman
-        if pacman not in self._objects:
+        if self.__render_pacmans and pacman not in self._objects:
             self._objects.append(pacman)
 
     def __on_player_remove(self, player_id: int, pacman: Pacman) -> None:
@@ -278,6 +280,15 @@ class MainScene(BaseScene):
 
     def set_paths_visible(self, visible: bool) -> None:
         self.__pack_kontroller.set_targets_visible(visible)
+
+
+    def set_pacmans_visible(self, visible: bool) -> None:
+        self.__render_pacmans = bool(visible)
+        for pacman in self.__players.values():
+            if self.__render_pacmans and pacman not in self._objects:
+                self._objects.append(pacman)
+            elif not self.__render_pacmans and pacman in self._objects:
+                self._objects.remove(pacman)
 
     def set_ghost_count(self, count: int) -> None:
         self.__ghost_count = max(0, min(4, int(count)))
