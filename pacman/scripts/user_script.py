@@ -143,6 +143,7 @@ def build_script(api):
     last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
     pending_stop_ts_by_player: dict[str, float] = {}
+    blocked_players: set[str] = set()
 
     loop_dt = 0.05
     resend_same_target_sec = 0.8
@@ -160,9 +161,11 @@ def build_script(api):
 
     while True:
         mqtt_ctrl.drain_logs()
-        invert_coords = control_panel.is_mqtt_invert_enabled()
+        invert_x = control_panel.is_mqtt_invert_x_enabled()
+        invert_y = control_panel.is_mqtt_invert_y_enabled()
 
         for kicked_name in control_panel.drain_kick_players():
+            blocked_players.add(kicked_name)
             kicked_id = player_ids.pop(kicked_name, None)
             if kicked_id is not None:
                 api.remove(kicked_id)
@@ -207,6 +210,8 @@ def build_script(api):
 
             if pos_c is not None:
                 player_name = _extract_player_name(payload, sample.topic) or "default"
+                if player_name in blocked_players:
+                    continue
 
                 last_input_cell_by_player[player_name] = (pos_c.x, pos_c.y)
 
@@ -223,8 +228,9 @@ def build_script(api):
 
                 pac_id = player_ids[player_name]
                 raw_x, raw_y = pos_c.x, pos_c.y
-                if invert_coords:
+                if invert_x:
                     raw_x = 28 - raw_x
+                if invert_y:
                     raw_y = 30 - raw_y
                 requested_tx, requested_ty = clamp_cell(raw_x, raw_y)
 
@@ -254,7 +260,7 @@ def build_script(api):
                         pending_stop_ts_by_player.pop(player_name, None)
                         last_target_cell_by_player[player_name] = None
 
-        control_panel.set_active_players(list(player_ids.keys()))
+        control_panel.set_active_players([name for name in player_ids.keys() if name not in blocked_players])
 
         yield api.wait(loop_dt)
         elapsed += loop_dt

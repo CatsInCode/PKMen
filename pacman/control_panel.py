@@ -18,9 +18,11 @@ class ControlPanel:
         self._started = False
         self._fullscreen_var: IntVar | None = None
         self._restart_on_rotate_var: IntVar | None = None
-        self._mqtt_invert_var: IntVar | None = None
+        self._mqtt_invert_x_var: IntVar | None = None
+        self._mqtt_invert_y_var: IntVar | None = None
         self._show_paths_var: IntVar | None = None
-        self._mqtt_invert_enabled = True
+        self._mqtt_invert_x_enabled = True
+        self._mqtt_invert_y_enabled = True
         self._active_players: list[str] = []
         self._active_players_lock = Lock()
         self._kick_queue: SimpleQueue[str] = SimpleQueue()
@@ -50,11 +52,17 @@ class ControlPanel:
             except Empty:
                 return out
 
-    def set_mqtt_invert_enabled(self, value: bool) -> None:
-        self._mqtt_invert_enabled = bool(value)
+    def set_mqtt_invert_x_enabled(self, value: bool) -> None:
+        self._mqtt_invert_x_enabled = bool(value)
 
-    def is_mqtt_invert_enabled(self) -> bool:
-        return bool(self._mqtt_invert_enabled)
+    def is_mqtt_invert_x_enabled(self) -> bool:
+        return bool(self._mqtt_invert_x_enabled)
+
+    def set_mqtt_invert_y_enabled(self, value: bool) -> None:
+        self._mqtt_invert_y_enabled = bool(value)
+
+    def is_mqtt_invert_y_enabled(self) -> bool:
+        return bool(self._mqtt_invert_y_enabled)
 
     def start(self, max_level: int) -> None:
         if self._started:
@@ -74,7 +82,8 @@ class ControlPanel:
 
         self._fullscreen_var = IntVar(value=1)
         self._restart_on_rotate_var = IntVar(value=0)
-        self._mqtt_invert_var = IntVar(value=1)
+        self._mqtt_invert_x_var = IntVar(value=1)
+        self._mqtt_invert_y_var = IntVar(value=1)
         self._show_paths_var = IntVar(value=1)
 
         Label(body, text="Управление уровнем").pack(anchor=W)
@@ -97,13 +106,21 @@ class ControlPanel:
         )
         restart_rotate_toggle.pack(anchor=W, pady=(6, 4))
 
-        mqtt_invert_toggle = Checkbutton(
+        mqtt_invert_x_toggle = Checkbutton(
             body,
-            text="Инвертировать MQTT координаты (28-x, 30-y)",
-            variable=self._mqtt_invert_var,
-            command=lambda: self.set_mqtt_invert_enabled(bool(self._mqtt_invert_var.get())),
+            text="Инвертировать MQTT X (28-x)",
+            variable=self._mqtt_invert_x_var,
+            command=lambda: self.set_mqtt_invert_x_enabled(bool(self._mqtt_invert_x_var.get())),
         )
-        mqtt_invert_toggle.pack(anchor=W, pady=(2, 4))
+        mqtt_invert_x_toggle.pack(anchor=W, pady=(2, 2))
+
+        mqtt_invert_y_toggle = Checkbutton(
+            body,
+            text="Инвертировать MQTT Y (30-y)",
+            variable=self._mqtt_invert_y_var,
+            command=lambda: self.set_mqtt_invert_y_enabled(bool(self._mqtt_invert_y_var.get())),
+        )
+        mqtt_invert_y_toggle.pack(anchor=W, pady=(2, 4))
 
         show_paths_toggle = Checkbutton(
             body,
