@@ -7,7 +7,7 @@ from __future__ import annotations
 # api.remove(id)
 # api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # api.goTo(id, x, y) / api.goToTime(id, x, y, time_sec)
-# api.setTarget(x, y, time_sec, color="red")
+# api.setTarget(x, y, time_sec)
 # api.getBlockInfo(x, y) -> bool
 # yield api.wait(seconds)
 # yield api.wait_key("u")
@@ -22,9 +22,9 @@ _GEOM = None
 
 # Режим парсинга входных сообщений:
 # - "#triangulate": вход = дистанции до якорей (A1/A2/A3), дальше триангуляция
-# - "#coordinates": вход только из topic `uwb/tag/coordinate/<name>/x|y|z`
+# - "#coordinates": вход только из topic `uwb/tag/coordinates/<name>/x|y|z`
 #   где движение считается по x/y (z логируется, но не влияет на 2D)
-INPUT_MODE = "#triangulate"
+INPUT_MODE = "#coordinates"
 
 
 def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCells | None:
@@ -55,8 +55,8 @@ def _extract_coordinates(payload: dict, topic: str | None = None) -> PositionCel
 
 def _extract_coordinates_from_topic_value(topic: str, payload: dict, cache: dict[str, dict[str, int]]) -> PositionCells | None:
     # Strict supported format (as requested):
-    # - uwb/tag/coordinate/<name>/x|y|z
-    prefix = "uwb/tag/coordinate/"
+    # - uwb/tag/coordinates/<name>/x|y|z
+    prefix = "uwb/tag/coordinates/"
     if not topic.startswith(prefix):
         return None
 
@@ -98,7 +98,7 @@ def _extract_player_name(payload: dict, topic: str) -> str | None:
     if isinstance(name, str) and name.strip():
         return name.strip()
 
-    prefix = "uwb/tag/coordinate/"
+    prefix = "uwb/tag/coordinates/"
     if topic.startswith(prefix):
         parts = [p for p in topic[len(prefix):].split("/") if p]
         if len(parts) >= 1:
@@ -125,7 +125,7 @@ def build_script(api):
 
     if _MQTT_CTRL is None:
         _MQTT_CTRL = MqttUwbController(
-            host="192.168.0.110",
+            host="192.168.10.118",
             port=1883,
             topic_raw="uwb/tag/#",
             client_id=None,
@@ -141,12 +141,11 @@ def build_script(api):
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
     last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
-    pending_stop_ts_by_player: dict[str, float] = {}
 
     loop_dt = 0.05
-    resend_same_target_sec = 0.8
+    resend_same_target_sec = 0.25
     move_time_sec = 1
-    stop_after_move_extra_sec = 0.12
+    target_visual_sec = 0.35
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -157,16 +156,32 @@ def build_script(api):
         y = max(0, min(layout.map_h_cells - 1, y))
         return x, y
 
+    def is_likely_wall(x: int, y: int) -> bool:
+        try:
+            v = api.getBlockInfo(x, y)
+            if isinstance(v, bool):
+                return v
+            return False
+        except Exception:
+            return False
+
+    def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
+        x, y = clamp_cell(x, y)
+
+        if not is_likely_wall(x, y):
+            return x, y
+
+        for r in range(1, max_r + 1):
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    xx, yy = clamp_cell(x + dx, y + dy)
+                    if not is_likely_wall(xx, yy):
+                        return xx, yy
+
+        return x, y
+
     while True:
         mqtt_ctrl.drain_logs()
-
-        for player_name, stop_ts in list(pending_stop_ts_by_player.items()):
-            if elapsed >= stop_ts:
-                pac_id = player_ids.get(player_name)
-                if pac_id is not None:
-                    api.stop(pac_id)
-                pending_stop_ts_by_player.pop(player_name, None)
-
 
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
@@ -175,7 +190,7 @@ def build_script(api):
 
             topic_parts = [p for p in sample.topic.split("/") if p]
             is_axis_topic = len(topic_parts) >= 3 and topic_parts[-1] in {"x", "y", "z"}
-            if sample.topic.startswith("uwb/tag/coordinate/") and is_axis_topic:
+            if sample.topic.startswith("uwb/tag/coordinates/") and is_axis_topic:
                 mode = "#coordinates"
                 player_name = _extract_player_name(payload, sample.topic) or player_name
                 if player_name and "name" not in payload:
@@ -204,13 +219,12 @@ def build_script(api):
                     api.stop(next_player_id)
                     last_target_cell_by_player[player_name] = None
                     last_send_ts_by_player[player_name] = 0.0
-                    pending_stop_ts_by_player[player_name] = elapsed
                     print(f"Find pacman: {player_name}")
                     print(f"Command: summon - {player_name}")
                     next_player_id += 1
 
                 pac_id = player_ids[player_name]
-                requested_tx, requested_ty = clamp_cell(pos_c.x, pos_c.y)
+                tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
@@ -220,23 +234,19 @@ def build_script(api):
                     need_send = True
                 else:
                     lx, ly = last_target_cell
-                    if abs(requested_tx - lx) > dead_zone_cells or abs(requested_ty - ly) > dead_zone_cells:
+                    if abs(tx - lx) > dead_zone_cells or abs(ty - ly) > dead_zone_cells:
                         need_send = True
                     elif elapsed - last_send_ts >= resend_same_target_sec:
                         need_send = True
 
                 if need_send:
-                    sent = api.goToTime(pac_id, requested_tx + 1, requested_ty + 1, move_time_sec)
+                    api.setTarget(tx + 1, ty + 1, target_visual_sec)
+                    api.goTo(pac_id, tx + 1, ty + 1)
 
-                    if sent:
-                        last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
-                        last_send_ts_by_player[player_name] = elapsed
-                        pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
-                        print(f"Command: moveTo - {player_name}")
-                    else:
-                        api.stop(pac_id)
-                        pending_stop_ts_by_player.pop(player_name, None)
-                        last_target_cell_by_player[player_name] = None
+                    last_target_cell_by_player[player_name] = (tx, ty)
+                    last_send_ts_by_player[player_name] = elapsed
+
+                    print(f"Command: moveTo - {player_name}")
 
         yield api.wait(loop_dt)
         elapsed += loop_dt
