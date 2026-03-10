@@ -46,8 +46,8 @@ class ScriptAPI:
     def goToTime(self, player_id: int, cell_x: int, cell_y: int, time_sec: float) -> bool:
         return self._controller.goToTime(player_id, cell_x, cell_y, time_sec)
 
-    def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
-        return self._controller.setTarget(cell_x, cell_y, time_sec)
+    def setTarget(self, cell_x: int, cell_y: int, time_sec: float, color: str = "red") -> bool:
+        return self._controller.setTarget(cell_x, cell_y, time_sec, color=color)
 
     def getBlockInfo(self, cell_x: int, cell_y: int) -> bool:
         return self._controller.getBlockInfo(cell_x, cell_y)
