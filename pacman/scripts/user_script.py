@@ -140,14 +140,12 @@ def build_script(api):
     next_player_id = 1
 
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
-    last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
     blocked_players: set[str] = set()
 
     loop_dt = 0.05
     dead_zone_cells = 1
 
-    elapsed = 0.0
     coord_cache: dict[str, dict[str, int]] = {}
 
     def clamp_cell(x: int, y: int) -> tuple[int, int]:
@@ -166,7 +164,6 @@ def build_script(api):
             if kicked_id is not None:
                 api.remove(kicked_id)
             last_target_cell_by_player.pop(kicked_name, None)
-            last_send_ts_by_player.pop(kicked_name, None)
             last_input_cell_by_player.pop(kicked_name, None)
             coord_cache.pop(kicked_name, None)
 
@@ -207,7 +204,6 @@ def build_script(api):
                     api.spawn(next_player_id, 1, 3)
                     api.stop(next_player_id)
                     last_target_cell_by_player[player_name] = None
-                    last_send_ts_by_player[player_name] = 0.0
                     print(f"Find pacman: {player_name}")
                     print(f"Command: summon - {player_name}")
                     next_player_id += 1
@@ -236,7 +232,6 @@ def build_script(api):
 
                     if sent:
                         last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
-                        last_send_ts_by_player[player_name] = elapsed
                         print(f"Command: moveTo - {player_name}")
                     else:
                         # Не дёргаем игрока лишним stop на каждом плохом пакете,
@@ -246,4 +241,3 @@ def build_script(api):
         control_panel.set_active_players([name for name in player_ids.keys() if name not in blocked_players])
 
         yield api.wait(loop_dt)
-        elapsed += loop_dt

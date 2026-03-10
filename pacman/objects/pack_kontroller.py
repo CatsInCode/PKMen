@@ -36,6 +36,7 @@ class PackKontroller(IEventful):
         self._on_spawn: Callable[[int, object], None] | None = None
         self._on_remove: Callable[[int, object], None] | None = None
         self._routes: dict[int, _RouteState] = {}
+        self._request_targets: dict[int, tuple[int, int]] = {}
         self._targets: list[_TargetMark] = []
         self._targets_visible = True
 
@@ -55,6 +56,11 @@ class PackKontroller(IEventful):
     def draw_targets(self, screen: Surface) -> None:
         if not self._targets_visible:
             return
+
+        for cell_x, cell_y in self._request_targets.values():
+            cx, cy = CellUtil.get_center_pos((cell_x, cell_y))
+            draw.circle(screen, Color("red"), (cx, cy), Cfg.TILE_SIZE // 3)
+
         for target in self._targets:
             cx, cy = CellUtil.get_center_pos((target.cell_x, target.cell_y))
             draw.circle(screen, Color(target.color), (cx, cy), Cfg.TILE_SIZE // 3)
@@ -87,6 +93,7 @@ class PackKontroller(IEventful):
 
     def unbind_player(self, player_id: int) -> object | None:
         self._routes.pop(player_id, None)
+        self._request_targets.pop(player_id, None)
         return self._players.pop(player_id, None)
 
     def spawn(self, player_id: int, cell_x: int, cell_y: int) -> None:
@@ -161,7 +168,7 @@ class PackKontroller(IEventful):
 
         start = pacman.get_cell()
         requested_target = (target_x, target_y)
-        self.setTarget(requested_target[0], requested_target[1], 1.2, color="red")
+        self._request_targets[player_id] = requested_target
 
         target = self._resolve_target_cell(pacman, start, requested_target)
         if target is None:
@@ -314,18 +321,7 @@ class PackKontroller(IEventful):
             self._routes.pop(player_id, None)
             return
 
-        # 2) Дополнительная страховка от проскока центра на высокой скорости:
-        # если центр пакмана уже достаточно близко к центру конечной клетки,
-        # тоже защёлкиваем и завершаем маршрут.
-        target_cx, target_cy = CellUtil.get_center_pos(target_cell)
-        tolerance_px = max(2.0, float(route.speed) + 1.0)
-        if abs(pacman.rect.centerx - target_cx) <= tolerance_px and abs(pacman.rect.centery - target_cy) <= tolerance_px:
-            pacman.teleport(target_cx, target_cy)
-            pacman.stop_move()
-            self._routes.pop(player_id, None)
-            return
-
-        # 3) Направление меняем только в центре клетки.
+        # Направление меняем только в центре клетки.
         if not CellUtil.is_in_cell_center(pacman.rect):
             return
 
