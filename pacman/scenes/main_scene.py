@@ -275,6 +275,10 @@ class MainScene(BaseScene):
         if event.type == KEYDOWN:
             self.__script_pressed_keys.add(key.name(event.key).lower())
 
+
+    def set_paths_visible(self, visible: bool) -> None:
+        self.__pack_kontroller.set_targets_visible(visible)
+
     def set_ghost_count(self, count: int) -> None:
         self.__ghost_count = max(0, min(4, int(count)))
         self.__ghosts = self.__all_ghosts[: self.__ghost_count]
