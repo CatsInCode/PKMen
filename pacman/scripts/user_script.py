@@ -7,13 +7,14 @@ from __future__ import annotations
 # api.remove(id)
 # api.up(id) / api.right(id) / api.left(id) / api.down(id) / api.stop(id)
 # api.goTo(id, x, y) / api.goToTime(id, x, y, time_sec)
-# api.setTarget(x, y, time_sec)
+# api.setTarget(x, y, time_sec, color="red")
 # api.getBlockInfo(x, y) -> bool
 # yield api.wait(seconds)
 # yield api.wait_key("u")
 
 from pacman.objects.mqttController import MqttUwbController
 from pacman.misc.geometryCalculation import AnchorLayout, Point2D, PositionCells, UwbGeometryCalculator
+from pacman.control_panel import control_panel
 
 
 # ===== module-level singletons =====
@@ -141,11 +142,12 @@ def build_script(api):
     last_target_cell_by_player: dict[str, tuple[int, int] | None] = {}
     last_send_ts_by_player: dict[str, float] = {}
     last_input_cell_by_player: dict[str, tuple[int, int] | None] = {}
+    pending_stop_ts_by_player: dict[str, float] = {}
 
     loop_dt = 0.05
-    resend_same_target_sec = 0.25
+    resend_same_target_sec = 0.8
     move_time_sec = 1
-    target_visual_sec = 0.35
+    stop_after_move_extra_sec = 0.12
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -156,43 +158,32 @@ def build_script(api):
         y = max(0, min(layout.map_h_cells - 1, y))
         return x, y
 
-    def is_likely_wall(x: int, y: int) -> bool:
-        try:
-            v = api.getBlockInfo(x, y)
-            if isinstance(v, bool):
-                return v
-            return False
-        except Exception:
-            return False
-
-    def find_reachable_candidate(x: int, y: int, max_r: int = 3) -> tuple[int, int]:
-        x, y = clamp_cell(x, y)
-
-        if not is_likely_wall(x, y):
-            return x, y
-
-        for r in range(1, max_r + 1):
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    xx, yy = clamp_cell(x + dx, y + dy)
-                    if not is_likely_wall(xx, yy):
-                        return xx, yy
-
-        return x, y
-
     while True:
-        for line in mqtt_ctrl.drain_logs():
-            print(line)
+        mqtt_ctrl.drain_logs()
+        invert_coords = control_panel.is_mqtt_invert_enabled()
+
+        for kicked_name in control_panel.drain_kick_players():
+            kicked_id = player_ids.pop(kicked_name, None)
+            if kicked_id is not None:
+                api.remove(kicked_id)
+            last_target_cell_by_player.pop(kicked_name, None)
+            last_send_ts_by_player.pop(kicked_name, None)
+            last_input_cell_by_player.pop(kicked_name, None)
+            pending_stop_ts_by_player.pop(kicked_name, None)
+            coord_cache.pop(kicked_name, None)
+
+        for player_name, stop_ts in list(pending_stop_ts_by_player.items()):
+            if elapsed >= stop_ts:
+                pac_id = player_ids.get(player_name)
+                if pac_id is not None:
+                    api.stop(pac_id)
+                pending_stop_ts_by_player.pop(player_name, None)
+
 
         for sample in mqtt_ctrl.drain_samples():
             payload = sample.payload
             mode = payload.get("mode", INPUT_MODE)
             player_name = _extract_player_name(payload, sample.topic) or "default"
-
-            print(
-                f"[MQTT] sample topic={sample.topic} "
-                f"player={player_name} mode={mode} payload={payload}"
-            )
 
             topic_parts = [p for p in sample.topic.split("/") if p]
             is_axis_topic = len(topic_parts) >= 3 and topic_parts[-1] in {"x", "y", "z"}
@@ -208,23 +199,7 @@ def build_script(api):
                 pos_c = _extract_coordinates_from_topic_value(sample.topic, payload, coord_cache)
 
                 if pos_c is None:
-                    topic_axis = topic_parts[-1] if topic_parts else ""
-                    cached = coord_cache.get(player_name, {})
-                    if topic_axis == "z":
-                        print(
-                            f"[MQTT] waiting x+y player={player_name}: got z only, "
-                            f"cached_x={cached.get('x')} cached_y={cached.get('y')}"
-                        )
-                    elif topic_axis in {"x", "y"}:
-                        print(
-                            f"[MQTT] waiting x+y player={player_name}: got {topic_axis}, "
-                            f"cached_x={cached.get('x')} cached_y={cached.get('y')}"
-                        )
-                    else:
-                        print(
-                            f"[MQTT] coordinates not parsed player={player_name} "
-                            f"topic={sample.topic} payload={payload}"
-                        )
+                    pass
             else:
                 res = geom.payload_to_cells(payload)
                 if res is not None:
@@ -233,19 +208,7 @@ def build_script(api):
             if pos_c is not None:
                 player_name = _extract_player_name(payload, sample.topic) or "default"
 
-                prev_input = last_input_cell_by_player.get(player_name)
-                cur_input = (pos_c.x, pos_c.y)
-                if prev_input != cur_input:
-                    print(
-                        f"[MQTT] coordinates changed player={player_name} "
-                        f"from={prev_input} to={cur_input}"
-                    )
-                else:
-                    print(
-                        f"[MQTT] coordinates unchanged player={player_name} "
-                        f"cell={cur_input}"
-                    )
-                last_input_cell_by_player[player_name] = cur_input
+                last_input_cell_by_player[player_name] = (pos_c.x, pos_c.y)
 
                 if player_name not in player_ids:
                     player_ids[player_name] = next_player_id
@@ -253,11 +216,17 @@ def build_script(api):
                     api.stop(next_player_id)
                     last_target_cell_by_player[player_name] = None
                     last_send_ts_by_player[player_name] = 0.0
-                    print(f"[UWB] player connected: {player_name} -> id={next_player_id}")
+                    pending_stop_ts_by_player[player_name] = elapsed
+                    print(f"Find pacman: {player_name}")
+                    print(f"Command: summon - {player_name}")
                     next_player_id += 1
 
                 pac_id = player_ids[player_name]
-                tx, ty = find_reachable_candidate(pos_c.x, pos_c.y, max_r=3)
+                raw_x, raw_y = pos_c.x, pos_c.y
+                if invert_coords:
+                    raw_x = 28 - raw_x
+                    raw_y = 30 - raw_y
+                requested_tx, requested_ty = clamp_cell(raw_x, raw_y)
 
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
@@ -267,39 +236,25 @@ def build_script(api):
                     need_send = True
                 else:
                     lx, ly = last_target_cell
-                    if abs(tx - lx) > dead_zone_cells or abs(ty - ly) > dead_zone_cells:
+                    if abs(requested_tx - lx) > dead_zone_cells or abs(requested_ty - ly) > dead_zone_cells:
                         need_send = True
                     elif elapsed - last_send_ts >= resend_same_target_sec:
                         need_send = True
 
                 if need_send:
-                    api.setTarget(tx + 1, ty + 1, target_visual_sec)
-                    api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
+                    sent = api.goToTime(pac_id, requested_tx + 1, requested_ty + 1, move_time_sec)
 
-                    last_target_cell_by_player[player_name] = (tx, ty)
-                    last_send_ts_by_player[player_name] = elapsed
-
-                    print(
-                        f"[MQTT] command sent player={player_name} id={pac_id} "
-                        f"target_cell=({tx},{ty}) visual=({tx + 1},{ty + 1})"
-                    )
-
-                    if pos_m is not None:
-                        print(
-                            f"[UWB] player={player_name} meters=({pos_m.x:.2f},{pos_m.y:.2f}) "
-                            f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
-                        )
+                    if sent:
+                        last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
+                        last_send_ts_by_player[player_name] = elapsed
+                        pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
+                        print(f"Command: moveTo - {player_name}")
                     else:
-                        print(
-                            f"[UWB] player={player_name} coordinates mode "
-                            f"-> cell=({pos_c.x},{pos_c.y}) -> cmd=({tx},{ty})"
-                        )
-                else:
-                    print(
-                        f"[MQTT] command skipped player={player_name} id={pac_id} "
-                        f"target_cell=({tx},{ty}) last_target={last_target_cell} "
-                        f"elapsed={elapsed:.2f} last_send={last_send_ts:.2f}"
-                    )
+                        api.stop(pac_id)
+                        pending_stop_ts_by_player.pop(player_name, None)
+                        last_target_cell_by_player[player_name] = None
+
+        control_panel.set_active_players(list(player_ids.keys()))
 
         yield api.wait(loop_dt)
         elapsed += loop_dt

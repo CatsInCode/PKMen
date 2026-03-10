@@ -20,6 +20,7 @@ class Game:
         self.__rotation = 0
         self.__restart_on_rotate = False
         self.__ghost_count = 4
+        self.__show_paths = True
         self.__apply_display_mode()
         self.__clock = time.Clock()
 
@@ -64,6 +65,7 @@ class Game:
             new_scene = MainScene()
             scene_manager.reset(new_scene)
             new_scene.set_ghost_count(self.__ghost_count)
+            new_scene.set_paths_visible(self.__show_paths)
             self.__apply_display_mode()
             return
         if isinstance(scene_manager.current, MenuScene):
@@ -99,6 +101,7 @@ class Game:
                 new_scene = MainScene()
                 scene_manager.reset(new_scene)
                 new_scene.set_ghost_count(self.__ghost_count)
+                new_scene.set_paths_visible(self.__show_paths)
                 self.__apply_display_mode()
             elif cmd.name == "rotate_left":
                 self.__rotation = (self.__rotation - 90) % 360
@@ -111,6 +114,11 @@ class Game:
                 self.__apply_display_mode()
                 if isinstance(scene_manager.current, MainScene):
                     scene_manager.current.set_ghost_count(self.__ghost_count)
+                    scene_manager.current.set_paths_visible(self.__show_paths)
+            elif cmd.name == "show_paths":
+                self.__show_paths = bool(cmd.value)
+                if isinstance(scene_manager.current, MainScene):
+                    scene_manager.current.set_paths_visible(self.__show_paths)
             elif cmd.name == "fullscreen":
                 self.__fullscreen = bool(cmd.value)
                 self.__apply_display_mode()

@@ -18,6 +18,7 @@ class _TargetMark:
     cell_x: int
     cell_y: int
     left_time: float
+    color: str = "red"
 
 
 @dataclass
@@ -36,6 +37,7 @@ class PackKontroller(IEventful):
         self._on_remove: Callable[[int, object], None] | None = None
         self._routes: dict[int, _RouteState] = {}
         self._targets: list[_TargetMark] = []
+        self._targets_visible = True
 
     def event_handler(self, event: Event) -> None:
         return
@@ -51,15 +53,25 @@ class PackKontroller(IEventful):
         self._targets = [target for target in self._targets if target.left_time > 0]
 
     def draw_targets(self, screen: Surface) -> None:
+        if not self._targets_visible:
+            return
         for target in self._targets:
             cx, cy = CellUtil.get_center_pos((target.cell_x, target.cell_y))
-            draw.circle(screen, Color("red"), (cx, cy), Cfg.TILE_SIZE // 3)
+            draw.circle(screen, Color(target.color), (cx, cy), Cfg.TILE_SIZE // 3)
 
-    def setTarget(self, cell_x: int, cell_y: int, time_sec: float) -> bool:
+    def setTarget(self, cell_x: int, cell_y: int, time_sec: float, color: str = "red") -> bool:
         if time_sec <= 0:
             return False
-        self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec)))
+        try:
+            Color(color)
+        except ValueError:
+            color = "red"
+        self._targets.append(_TargetMark(cell_x, cell_y, float(time_sec), color=color))
         return True
+
+
+    def set_targets_visible(self, enabled: bool) -> None:
+        self._targets_visible = bool(enabled)
 
     def set_player_factory(self, factory: Callable[[], object]) -> None:
         self._player_factory = factory
@@ -148,7 +160,15 @@ class PackKontroller(IEventful):
             return False
 
         start = pacman.get_cell()
-        target = (target_x, target_y)
+        requested_target = (target_x, target_y)
+        self.setTarget(requested_target[0], requested_target[1], 1.2, color="red")
+
+        target = self._resolve_target_cell(pacman, start, requested_target)
+        if target is None:
+            return False
+        if target != requested_target:
+            self.setTarget(target[0], target[1], 1.2, color="green")
+
         path = self._build_path(pacman, start, target)
         if not path:
             return False
@@ -167,10 +187,128 @@ class PackKontroller(IEventful):
         self._apply_next_direction(player_id)
         return True
 
+    def _resolve_target_cell(
+        self,
+        pacman,
+        start: tuple[int, int],
+        requested_target: tuple[int, int],
+    ) -> tuple[int, int] | None:
+        tx, ty = requested_target
+        if self._is_valid_target_cell(pacman, tx, ty):
+            return requested_target
+
+        direction = self._get_player_move_direction(pacman)
+        if direction is None:
+            return None
+
+        sx, sy = start
+        on_motion_line = ((direction in {"left", "right"} and ty == sy) or
+                          (direction in {"up", "down"} and tx == sx))
+
+        if on_motion_line:
+            return self._resolve_target_on_motion_line(pacman, start, requested_target, direction)
+
+        return self._resolve_target_on_perpendicular_ray(pacman, start, requested_target, direction)
+
+    def _resolve_target_on_motion_line(
+        self,
+        pacman,
+        start: tuple[int, int],
+        requested_target: tuple[int, int],
+        direction: str,
+    ) -> tuple[int, int] | None:
+        sx, sy = start
+        tx, ty = requested_target
+
+        if direction in {"left", "right"}:
+            step_x = 1 if sx > tx else -1 if sx < tx else 0
+            if step_x == 0:
+                return None
+            x = tx
+            while x != sx:
+                x += step_x
+                if not self._is_in_bounds(pacman, x, ty):
+                    return None
+                if self._is_valid_target_cell(pacman, x, ty):
+                    return x, ty
+            return None
+
+        step_y = 1 if sy > ty else -1 if sy < ty else 0
+        if step_y == 0:
+            return None
+        y = ty
+        while y != sy:
+            y += step_y
+            if not self._is_in_bounds(pacman, tx, y):
+                return None
+            if self._is_valid_target_cell(pacman, tx, y):
+                return tx, y
+        return None
+
+    def _resolve_target_on_perpendicular_ray(
+        self,
+        pacman,
+        start: tuple[int, int],
+        requested_target: tuple[int, int],
+        direction: str,
+    ) -> tuple[int, int] | None:
+        sx, sy = start
+        tx, ty = requested_target
+
+        step_x, step_y = 0, 0
+        if direction in {"left", "right"}:
+            if sy == ty:
+                return None
+            step_y = -1 if sy < ty else 1
+        else:
+            if sx == tx:
+                return None
+            step_x = -1 if sx < tx else 1
+
+        for step in range(1, 4):
+            x = tx + step_x * step
+            y = ty + step_y * step
+            if not self._is_in_bounds(pacman, x, y):
+                return None
+            if self._is_valid_target_cell(pacman, x, y):
+                return x, y
+        return None
+
+    def _get_player_move_direction(self, pacman) -> str | None:
+        direction = {
+            (1, 0): "right",
+            (-1, 0): "left",
+            (0, 1): "down",
+            (0, -1): "up",
+        }
+        shift = (getattr(pacman, "shift_x", 0), getattr(pacman, "shift_y", 0))
+        return direction.get(shift)
+
+    def _is_valid_target_cell(self, pacman, cell_x: int, cell_y: int) -> bool:
+        if not self._is_in_bounds(pacman, cell_x, cell_y):
+            return False
+        collision_map = pacman.level_loader.collision_map
+        return collision_map[cell_y][cell_x] != 0
+
+    def _is_in_bounds(self, pacman, cell_x: int, cell_y: int) -> bool:
+        collision_map = pacman.level_loader.collision_map
+        rows = len(collision_map)
+        cols = len(collision_map[0]) if rows else 0
+        return 0 <= cell_x < cols and 0 <= cell_y < rows
+
     def _update_route(self, player_id: int) -> None:
         pacman = self._players.get(player_id)
         route = self._routes.get(player_id)
         if pacman is None or route is None:
+            return
+
+        target_cell = route.cells[-1]
+        target_cx, target_cy = CellUtil.get_center_pos(target_cell)
+        tolerance_px = max(1.0, float(route.speed))
+        if abs(pacman.rect.centerx - target_cx) <= tolerance_px and abs(pacman.rect.centery - target_cy) <= tolerance_px:
+            pacman.teleport(target_cx, target_cy)
+            pacman.stop_move()
+            self._routes.pop(player_id, None)
             return
 
         if not CellUtil.is_in_cell_center(pacman.rect):
