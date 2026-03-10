@@ -147,7 +147,6 @@ def build_script(api):
     resend_same_target_sec = 0.8
     move_time_sec = 1
     stop_after_move_extra_sec = 0.12
-    target_visual_sec = 0.45
     dead_zone_cells = 1
 
     elapsed = 0.0
@@ -157,25 +156,6 @@ def build_script(api):
         x = max(0, min(layout.map_w_cells - 1, x))
         y = max(0, min(layout.map_h_cells - 1, y))
         return x, y
-
-    def is_likely_wall(x: int, y: int) -> bool:
-        try:
-            v = api.getBlockInfo(x, y)
-            if isinstance(v, bool):
-                return v
-            return False
-        except Exception:
-            return False
-
-    def is_area_free_for_pacman(x: int, y: int, size_cells: int = 2) -> bool:
-        for dy in range(size_cells):
-            for dx in range(size_cells):
-                xx, yy = x + dx, y + dy
-                if xx >= layout.map_w_cells or yy >= layout.map_h_cells:
-                    return False
-                if is_likely_wall(xx, yy):
-                    return False
-        return True
 
     while True:
         mqtt_ctrl.drain_logs()
@@ -232,16 +212,6 @@ def build_script(api):
                 pac_id = player_ids[player_name]
                 requested_tx, requested_ty = clamp_cell(pos_c.x, pos_c.y)
 
-                api.setTarget(requested_tx + 1, requested_ty + 1, target_visual_sec, color="red")
-                if not is_area_free_for_pacman(requested_tx, requested_ty, size_cells=2):
-                    api.stop(pac_id)
-                    pending_stop_ts_by_player.pop(player_name, None)
-                    last_target_cell_by_player[player_name] = None
-                    continue
-
-                tx, ty = requested_tx, requested_ty
-                api.setTarget(tx + 1, ty + 1, target_visual_sec, color="green")
-
                 last_target_cell = last_target_cell_by_player.get(player_name)
                 last_send_ts = last_send_ts_by_player.get(player_name, 0.0)
 
@@ -250,22 +220,23 @@ def build_script(api):
                     need_send = True
                 else:
                     lx, ly = last_target_cell
-                    if abs(tx - lx) > dead_zone_cells or abs(ty - ly) > dead_zone_cells:
+                    if abs(requested_tx - lx) > dead_zone_cells or abs(requested_ty - ly) > dead_zone_cells:
                         need_send = True
                     elif elapsed - last_send_ts >= resend_same_target_sec:
                         need_send = True
 
                 if need_send:
-                    sent = api.goToTime(pac_id, tx + 1, ty + 1, move_time_sec)
+                    sent = api.goToTime(pac_id, requested_tx + 1, requested_ty + 1, move_time_sec)
 
                     if sent:
-                        last_target_cell_by_player[player_name] = (tx, ty)
+                        last_target_cell_by_player[player_name] = (requested_tx, requested_ty)
                         last_send_ts_by_player[player_name] = elapsed
                         pending_stop_ts_by_player[player_name] = elapsed + move_time_sec + stop_after_move_extra_sec
                         print(f"Command: moveTo - {player_name}")
                     else:
                         api.stop(pac_id)
                         pending_stop_ts_by_player.pop(player_name, None)
+                        last_target_cell_by_player[player_name] = None
 
         yield api.wait(loop_dt)
         elapsed += loop_dt
