@@ -312,9 +312,7 @@ class PackKontroller(IEventful):
         target_cell = route.cells[-1]
         current_cell = pacman.get_cell()
 
-        # 1) Самый жёсткий и надёжный кейс:
-        # если уже оказались в целевой клетке, сразу защёлкиваем в её центр и завершаем маршрут.
-        if current_cell == target_cell:
+        if self._is_within_target_radius(pacman, current_cell, target_cell, radius_cells=1):
             target_cx, target_cy = CellUtil.get_center_pos(target_cell)
             pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
@@ -336,7 +334,7 @@ class PackKontroller(IEventful):
         current = pacman.get_cell()
         target = route.cells[-1]
 
-        if current == target:
+        if self._is_within_target_radius(pacman, current, target, radius_cells=1):
             target_cx, target_cy = CellUtil.get_center_pos(target)
             pacman.teleport(target_cx, target_cy)
             pacman.stop_move()
@@ -346,16 +344,11 @@ class PackKontroller(IEventful):
         try:
             idx = route.cells.index(current)
         except ValueError:
-            if not self._rebuild_route_from_current(player_id, route.speed):
-                pacman.stop_move()
-                self._routes.pop(player_id, None)
+            self._rebuild_route_from_current(player_id, route.speed)
             return
 
         if idx >= len(route.cells) - 1:
-            target_cx, target_cy = CellUtil.get_center_pos(target)
-            pacman.teleport(target_cx, target_cy)
-            pacman.stop_move()
-            self._routes.pop(player_id, None)
+            self._rebuild_route_from_current(player_id, route.speed)
             return
 
         nxt = route.cells[idx + 1]
@@ -379,13 +372,30 @@ class PackKontroller(IEventful):
         }.get((dx, dy))
 
         if direction is None:
-            if not self._rebuild_route_from_current(player_id, route.speed):
-                pacman.stop_move()
-                self._routes.pop(player_id, None)
+            self._rebuild_route_from_current(player_id, route.speed)
             return
 
         pacman.set_move_speed(route.speed)
         pacman.set_move_command(direction)
+
+    def _is_within_target_radius(
+        self,
+        pacman,
+        current: tuple[int, int],
+        target: tuple[int, int],
+        radius_cells: int = 1,
+    ) -> bool:
+        collision_map = pacman.level_loader.collision_map
+        rows = len(collision_map)
+        cols = len(collision_map[0]) if rows else 0
+        if cols <= 0 or rows <= 0:
+            return False
+
+        dx = abs(current[0] - target[0])
+        dy = abs(current[1] - target[1])
+        dx = min(dx, cols - dx)
+        dy = min(dy, rows - dy)
+        return dx <= radius_cells and dy <= radius_cells
 
     def _rebuild_route_from_current(self, player_id: int, speed: float) -> bool:
         pacman = self._players.get(player_id)
