@@ -350,10 +350,9 @@ class PackKontroller(IEventful):
         try:
             idx = route.cells.index(current)
         except ValueError:
-            # Если пакман немного рассинхронизировался с route.cells,
-            # просто не ломаемся мгновенно, а завершаем маршрут мягко.
-            pacman.stop_move()
-            self._routes.pop(player_id, None)
+            if not self._rebuild_route_from_current(player_id, route.speed):
+                pacman.stop_move()
+                self._routes.pop(player_id, None)
             return
 
         if idx >= len(route.cells) - 1:
@@ -384,12 +383,29 @@ class PackKontroller(IEventful):
         }.get((dx, dy))
 
         if direction is None:
-            pacman.stop_move()
-            self._routes.pop(player_id, None)
+            if not self._rebuild_route_from_current(player_id, route.speed):
+                pacman.stop_move()
+                self._routes.pop(player_id, None)
             return
 
         pacman.set_move_speed(route.speed)
         pacman.set_move_command(direction)
+
+    def _rebuild_route_from_current(self, player_id: int, speed: float) -> bool:
+        pacman = self._players.get(player_id)
+        route = self._routes.get(player_id)
+        if pacman is None or route is None:
+            return False
+
+        start = pacman.get_cell()
+        target = route.cells[-1]
+        rebuilt_path = self._build_path(pacman, start, target)
+        if len(rebuilt_path) <= 1:
+            return False
+
+        self._routes[player_id] = _RouteState(rebuilt_path, speed)
+        self._apply_next_direction(player_id)
+        return True
 
     def _build_path(self, pacman, start: tuple[int, int], target: tuple[int, int]) -> list[tuple[int, int]]:
         collision_map = pacman.level_loader.collision_map
